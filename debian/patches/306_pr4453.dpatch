@@ -1,0 +1,73 @@
+#!/bin/sh -e
+## 306_pr4453.dpatch
+##
+## DP: Description: Fix PR binutils/4453
+## DP: Upstream status: Fix in CVS head
+
+if [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+
+[ -f debian/patches/00patch-opts ] && . debian/patches/00patch-opts
+patch_opts="${patch_opts:--f --no-backup-if-mismatch}"
+
+case "$1" in
+       -patch) patch $patch_opts -p1 < $0;;
+       -unpatch) patch $patch_opts -p1 -R < $0;;
+        *)
+                echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+                exit 1;;
+esac
+
+exit 0
+
+2008-01-21  Alan Modra  <amodra@bigpond.net.au>
+
+	PR 4453
+	* format.c (bfd_check_format_matches): Don't accept archives as
+	fully matching unless they have a map.
+
+@DPATCH@
+===================================================================
+RCS file: /cvs/src/src/bfd/format.c,v
+retrieving revision 1.26
+retrieving revision 1.27
+diff -u -r1.26 -r1.27
+--- src/bfd/format.c	2007/09/14 05:19:27	1.26
++++ src/bfd/format.c	2008/01/21 04:56:47	1.27
+@@ -1,6 +1,6 @@
+ /* Generic BFD support for file formats.
+    Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1999, 2000, 2001, 2002,
+-   2003, 2005, 2007 Free Software Foundation, Inc.
++   2003, 2005, 2007, 2008 Free Software Foundation, Inc.
+    Written by Cygnus Support.
+ 
+    This file is part of BFD, the Binary File Descriptor library.
+@@ -210,7 +210,7 @@
+ 
+       temp = BFD_SEND_FMT (abfd, _bfd_check_format, (abfd));
+ 
+-      if (temp)
++      if (temp && (abfd->format != bfd_archive || bfd_has_map (abfd)))
+ 	{
+ 	  /* This format checks out as ok!  */
+ 	  right_targ = temp;
+@@ -228,12 +228,13 @@
+ 	    matching_vector[match_count] = temp;
+ 	  match_count++;
+ 	}
+-      else if ((err = bfd_get_error ()) == bfd_error_wrong_object_format
++      else if (temp
++	       || (err = bfd_get_error ()) == bfd_error_wrong_object_format
+ 	       || err == bfd_error_file_ambiguously_recognized)
+ 	{
+-	  /* An archive with objects of the wrong type, or an
+-	     ambiguous match.  We want this target to match if we get
+-	     no better matches.  */
++	  /* An archive with no armap or objects of the wrong type,
++	     or an ambiguous match.  We want this target to match
++	     if we get no better matches.  */
+ 	  if (ar_right_targ != bfd_default_vector[0])
+ 	    ar_right_targ = *target;
+ 	  if (matching_vector)
