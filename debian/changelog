@@ -1,3 +1,11 @@
+binutils (2.18.1~cvs20080103-7.ip1) asimov; urgency=low
+
+  * Build for Inkpump:
+    - package section changed to host-tools,
+    - changed maintainer.
+
+ -- Mikhail Gusarov <dottedmag@dottedmag.net>  Tue, 06 Jan 2009 06:00:59 +0600
+
 binutils (2.18.1~cvs20080103-7) unstable; urgency=low
 
   * Switch maintainer and uploader.
