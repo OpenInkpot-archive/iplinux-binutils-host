@@ -687,8 +687,10 @@ configure-$(TARGET)-stamp: patch-stamp
 	rm -rf configure-$(TARGET)-stamp builddir-$(TARGET)
 	mkdir builddir-$(TARGET)
 	cd builddir-$(TARGET) \
-	    && env CC="$(CC)" ../configure --host=$(DEB_HOST_GNU_TYPE) \
-	        --build=$(DEB_BUILD_GNU_TYPE) --target=$(TARGET) --prefix=/usr \
+	    && env CC="$(CC)" ../configure \
+			--host=`echo $(DEB_BUILD_GNU_TYPE) | sed -e 's/\(.*\)-\(.*\)-\(.*\)/\1-build-\2-\3/'` \
+	        --build=`echo $(DEB_BUILD_GNU_TYPE) | sed -e 's/\(.*\)-\(.*\)-\(.*\)/\1-build-\2-\3/'` \
+			--target=$(TARGET) --prefix=/usr \
 		$(ADDITIONAL_TARGETS)
 	touch $@
 
