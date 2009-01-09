@@ -2,7 +2,9 @@ binutils (2.18.1~cvs20080103-7.ip1) asimov; urgency=low
 
   * Build for Inkpump:
     - package section changed to host-tools,
-    - changed maintainer.
+    - changed maintainer,
+    - forced making a cross-tools when building on host for the same
+      target architecture (i386->i386).
 
  -- Mikhail Gusarov <dottedmag@dottedmag.net>  Tue, 06 Jan 2009 06:00:59 +0600
 
