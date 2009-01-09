@@ -1,5 +1,5 @@
 Source: binutils
-Section: host-tools
+Section: host/tools
 Priority: optional
 Maintainer: Mikhail Gusarov <dottedmag@dottedmag.net>
 Standards-Version: 3.8.0
