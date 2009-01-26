@@ -38,9 +38,9 @@ install_file   = install -m 644
 install_script = install -m 755
 install_binary = install -m 755 -s
 
-DEB_BUILD_GNU_TYPE := $(shell set -x ; dpkg-architecture -a$(TARGET) -qDEB_BUILD_GNU_TYPE)
-DEB_HOST_ARCH 	   := $(shell set -x ; dpkg-architecture -a$(TARGET) -qDEB_HOST_ARCH)
-DEB_HOST_GNU_TYPE  := $(shell set -x ; dpkg-architecture -a$(TARGET) -qDEB_HOST_GNU_TYPE)
+DEB_BUILD_GNU_TYPE := $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
+DEB_HOST_ARCH 	   := $(shell dpkg-architecture -qDEB_HOST_ARCH)
+DEB_HOST_GNU_TYPE  := $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
 
 SHELL  = /bin/bash
 
@@ -688,8 +688,8 @@ configure-$(TARGET)-stamp: patch-stamp
 	mkdir builddir-$(TARGET)
 	cd builddir-$(TARGET) \
 	    && env CC="$(CC)" ../configure \
-			--host=$(DEB_BUILD_GNU_TYPE) \
-	        --build=$(DEB_BUILD_GNU_TYPE) \
+			--host=`echo $(DEB_BUILD_GNU_TYPE) | sed -e 's/\(.*\)-\(.*\)-\(.*\)/\1-build-\2-\3/'` \
+	        --build=`echo $(DEB_BUILD_GNU_TYPE) | sed -e 's/\(.*\)-\(.*\)-\(.*\)/\1-build-\2-\3/'` \
 			--target=$(TARGET) --prefix=/usr \
 		$(ADDITIONAL_TARGETS)
 	touch $@
