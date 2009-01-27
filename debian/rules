@@ -47,9 +47,6 @@ SHELL  = /bin/bash
 CC     = gcc
 CFLAGS = -g -O2
 STRIP  = strip --remove-section=.comment --remove-section=.note
-ifneq ($(DEB_BUILD_GNU_TYPE),$(DEB_HOST_GNU_TYPE))
-  CC    = $(DEB_HOST_GNU_TYPE)-gcc
-endif
 
 ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
   CFLAGS = -g -O0
