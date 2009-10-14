@@ -1,6 +1,6 @@
 /* SPARC-specific support for 64-bit ELF
    Copyright 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002,
-   2003, 2004, 2005, 2007 Free Software Foundation, Inc.
+   2003, 2004, 2005, 2006, 2007, 2008, 2009 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -441,7 +441,7 @@ elf64_sparc_add_symbol_hook (bfd *abfd, struct bfd_link_info *info,
 	  return FALSE;
 	}
 
-      if (info->hash->creator != abfd->xvec
+      if (info->output_bfd->xvec != abfd->xvec
 	  || (abfd->flags & DYNAMIC) != 0)
         {
 	  /* STT_REGISTER only works when linking an elf64_sparc object.
@@ -510,7 +510,7 @@ elf64_sparc_add_symbol_hook (bfd *abfd, struct bfd_link_info *info,
       return TRUE;
     }
   else if (*namep && **namep
-	   && info->hash->creator == abfd->xvec)
+	   && info->output_bfd->xvec == abfd->xvec)
     {
       int i;
       struct _bfd_sparc_elf_app_reg *p;
@@ -538,10 +538,11 @@ elf64_sparc_add_symbol_hook (bfd *abfd, struct bfd_link_info *info,
 static bfd_boolean
 elf64_sparc_output_arch_syms (bfd *output_bfd ATTRIBUTE_UNUSED,
 			      struct bfd_link_info *info,
-			      PTR finfo, bfd_boolean (*func) (PTR, const char *,
-							      Elf_Internal_Sym *,
-							      asection *,
-							      struct elf_link_hash_entry *))
+			      PTR finfo,
+			      int (*func) (PTR, const char *,
+					   Elf_Internal_Sym *,
+					   asection *,
+					   struct elf_link_hash_entry *))
 {
   int reg;
   struct _bfd_sparc_elf_app_reg *app_regs =
@@ -585,10 +586,10 @@ elf64_sparc_output_arch_syms (bfd *output_bfd ATTRIBUTE_UNUSED,
 	sym.st_other = 0;
 	sym.st_info = ELF_ST_INFO (app_regs [reg].bind, STT_REGISTER);
 	sym.st_shndx = app_regs [reg].shndx;
-	if (! (*func) (finfo, app_regs [reg].name, &sym,
-		       sym.st_shndx == SHN_ABS
-			 ? bfd_abs_section_ptr : bfd_und_section_ptr,
-		       NULL))
+	if ((*func) (finfo, app_regs [reg].name, &sym,
+		     sym.st_shndx == SHN_ABS
+		     ? bfd_abs_section_ptr : bfd_und_section_ptr,
+		     NULL) != 1)
 	  return FALSE;
       }
 
@@ -870,6 +871,8 @@ const struct elf_size_info elf64_sparc_size_info =
 
 #define elf_backend_create_dynamic_sections \
   _bfd_sparc_elf_create_dynamic_sections
+#define elf_backend_relocs_compatible \
+  _bfd_elf_relocs_compatible
 #define elf_backend_check_relocs \
   _bfd_sparc_elf_check_relocs
 #define elf_backend_adjust_dynamic_symbol \

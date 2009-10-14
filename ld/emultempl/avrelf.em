@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright 2006, 2007
+#   Copyright 2006, 2007, 2008, 2009
 #   Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
@@ -85,7 +85,7 @@ avr_elf_${EMULATION_NAME}_before_allocation (void)
   if (avr_no_stubs)
     return;
 
-  ret = elf32_avr_setup_section_lists (output_bfd, &link_info);
+  ret = elf32_avr_setup_section_lists (link_info.output_bfd, &link_info);
 
   if (ret < 0)
     einfo ("%X%P: can not setup the input section list: %E\n");
@@ -94,7 +94,7 @@ avr_elf_${EMULATION_NAME}_before_allocation (void)
     return;
 
   /* Call into the BFD backend to do the real "stub"-work.  */
-  if (! elf32_avr_size_stubs (output_bfd, &link_info, TRUE))
+  if (! elf32_avr_size_stubs (link_info.output_bfd, &link_info, TRUE))
     einfo ("%X%P: can not size stub section: %E\n");
 }
 
@@ -110,11 +110,11 @@ avr_elf_create_output_section_statements (void)
                                    lang_input_file_is_fake_enum,
                                    NULL);
 
-  stub_file->the_bfd = bfd_create ("linker stubs", output_bfd);
+  stub_file->the_bfd = bfd_create ("linker stubs", link_info.output_bfd);
   if (stub_file->the_bfd == NULL
       || !bfd_set_arch_mach (stub_file->the_bfd,
-                             bfd_get_arch (output_bfd),
-                             bfd_get_mach (output_bfd)))
+                             bfd_get_arch (link_info.output_bfd),
+                             bfd_get_mach (link_info.output_bfd)))
     {
       einfo ("%X%P: can not create stub BFD %E\n");
       return;
@@ -122,14 +122,12 @@ avr_elf_create_output_section_statements (void)
 
   /* Now we add the stub section.  */
 
-  avr_stub_section = bfd_make_section_anyway (stub_file->the_bfd,
-                                              ".trampolines");
-  if (avr_stub_section == NULL)
-    goto err_ret;
-
   flags = (SEC_ALLOC | SEC_LOAD | SEC_READONLY | SEC_CODE
            | SEC_HAS_CONTENTS | SEC_RELOC | SEC_IN_MEMORY | SEC_KEEP);
-  if (!bfd_set_section_flags (stub_file->the_bfd, avr_stub_section, flags))
+  avr_stub_section = bfd_make_section_anyway_with_flags (stub_file->the_bfd,
+							 ".trampolines",
+							 flags);
+  if (avr_stub_section == NULL)
     goto err_ret;
 
   avr_stub_section->alignment_power = 1;
@@ -146,29 +144,24 @@ avr_elf_create_output_section_statements (void)
 /* Re-calculates the size of the stubs so that we won't waste space.  */
 
 static void
-avr_elf_finish (void)
+avr_elf_after_allocation (void)
 {
-  if (!avr_no_stubs)
+  if (!avr_no_stubs && !command_line.relax)
     {
-      /* Now build the linker stubs.  */
-      if (stub_file->the_bfd->sections != NULL)
-       {
-         /* Call again the trampoline analyzer to initialize the trampoline
-            stubs with the correct symbol addresses.  Since there could have
-            been relaxation, the symbol addresses that were found during
-            first call may no longer be correct.  */
-         if (!elf32_avr_size_stubs (output_bfd, &link_info, FALSE))
-           {
-             einfo ("%X%P: can not size stub section: %E\n");
-             return;
-           }
-
-         if (!elf32_avr_build_stubs (&link_info))
-           einfo ("%X%P: can not build stubs: %E\n");
-       }
+      /* If relaxing, elf32_avr_size_stubs will be called from
+	 elf32_avr_relax_section.  */
+      if (!elf32_avr_size_stubs (link_info.output_bfd, &link_info, FALSE))
+	einfo ("%X%P: can not size stub section: %E\n");
     }
 
-  gld${EMULATION_NAME}_finish ();
+  gld${EMULATION_NAME}_after_allocation ();
+
+  /* Now build the linker stubs.  */
+  if (!avr_no_stubs)
+    {
+      if (!elf32_avr_build_stubs (&link_info))
+	einfo ("%X%P: can not build stubs: %E\n");
+    }
 }
 
 
@@ -198,30 +191,32 @@ PARSE_AND_LIST_LONGOPTS='
 '
 
 PARSE_AND_LIST_OPTIONS='
-  fprintf (file, _("     --pmem-wrap-around=<val> "
-                           "Make the linker relaxation machine assume that a\n"
-                   "                              "
-                           "program counter wrap-around occures at address\n"
-                   "                              "
-                           "<val>. Supported values are 8k, 16k, 32k and 64k.\n"));
-  fprintf (file, _("     --no-call-ret-replacement "
-                           "The relaxation machine normally will\n"
-                   "                               "
-                           "substitute two immediately following call/ret\n"
-                   "                               "
-                           "instructions by a single jump instruction.\n"
-                   "                               "
-                           "This option disables this optimization.\n"));
-  fprintf (file, _("     --no-stubs "
-                           "If the linker detects to attempt to access\n"
-                   "                               "
-                           "an instruction beyond 128k by a reloc that\n"
-                   "                               "
-                           "is limited to 128k max, it inserts a jump\n"
-                   "                               "
-                           "stub. You can de-active this with this switch.\n"));
-  fprintf (file, _("     --debug-stubs Used for debugging avr-ld.\n"));
-  fprintf (file, _("     --debug-relax Used for debugging avr-ld.\n"));
+  fprintf (file, _("  --pmem-wrap-around=<val>    "
+		   "Make the linker relaxation machine assume that a\n"
+		   "                              "
+		   "  program counter wrap-around occures at address\n"
+		   "                              "
+		   "  <val>.  Supported values: 8k, 16k, 32k and 64k.\n"));
+  fprintf (file, _("  --no-call-ret-replacement   "
+		   "The relaxation machine normally will\n"
+		   "                              "
+		   "  substitute two immediately following call/ret\n"
+		   "                              "
+		   "  instructions by a single jump instruction.\n"
+		   "                              "
+		   "  This option disables this optimization.\n"));
+  fprintf (file, _("  --no-stubs                  "
+		   "If the linker detects to attempt to access\n"
+		   "                              "
+		   "  an instruction beyond 128k by a reloc that\n"
+		   "                              "
+		   "  is limited to 128k max, it inserts a jump\n"
+		   "                              "
+		   "  stub. You can de-active this with this switch.\n"));
+  fprintf (file, _("  --debug-stubs               "
+		   "Used for debugging avr-ld.\n"));
+  fprintf (file, _("  --debug-relax               "
+		   "Used for debugging avr-ld.\n"));
 '
 
 PARSE_AND_LIST_ARGS_CASES='
@@ -266,5 +261,5 @@ PARSE_AND_LIST_ARGS_CASES='
 # Put these extra avr-elf routines in ld_${EMULATION_NAME}_emulation
 #
 LDEMUL_BEFORE_ALLOCATION=avr_elf_${EMULATION_NAME}_before_allocation
-LDEMUL_FINISH=avr_elf_finish
+LDEMUL_AFTER_ALLOCATION=avr_elf_after_allocation
 LDEMUL_CREATE_OUTPUT_SECTION_STATEMENTS=avr_elf_create_output_section_statements

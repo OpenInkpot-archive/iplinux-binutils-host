@@ -1,5 +1,5 @@
 /* Sysroff object format dumper.
-   Copyright 1994, 1995, 1998, 1999, 2000, 2001, 2002, 2003, 2005, 2007
+   Copyright 1994, 1995, 1998, 1999, 2000, 2001, 2002, 2003, 2005, 2007, 2009
    Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
@@ -119,8 +119,15 @@ fillup (unsigned char *ptr)
   int sum;
   int i;
 
-  size = getc (file) - 2;
-  fread (ptr, 1, size, file);
+  size = getc (file);
+  if (size == EOF
+      || size <= 2)
+    return 0;
+
+  size -= 2;
+  if (fread (ptr, size, 1, file) != 1)
+    return 0;
+
   sum = code + size + 2;
 
   for (i = 0; i < size; i++)
@@ -132,7 +139,7 @@ fillup (unsigned char *ptr)
   if (dump)
     dh (ptr, size);
 
-  return size - 1;
+  return size;
 }
 
 static barray
@@ -522,8 +529,7 @@ tab (int i, char *s)
   if (s)
     {
       p ();
-      printf (s);
-      printf ("\n");
+      puts (s);
     }
 }
 

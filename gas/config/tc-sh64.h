@@ -1,5 +1,5 @@
 /* This file is tc-sh64.h
-   Copyright 2000, 2001, 2002, 2003, 2007
+   Copyright 2000, 2001, 2002, 2003, 2005, 2007, 2008
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -115,10 +115,11 @@ extern int sh64_target_mach (void);
 
 /* Don't complain when we leave fx_subsy around.  */
 #undef TC_VALIDATE_FIX_SUB
-#define TC_VALIDATE_FIX_SUB(FIX)			\
-  ((FIX)->fx_r_type == BFD_RELOC_32_PLT_PCREL		\
-   || (sh_relax && SWITCH_TABLE (FIX))			\
-   || *symbol_get_tc ((FIX)->fx_addsy) != NULL)
+#define TC_VALIDATE_FIX_SUB(FIX, SEG)			\
+  ((md_register_arithmetic || (SEG) != reg_section)	\
+   && ((FIX)->fx_r_type == BFD_RELOC_32_PLT_PCREL	\
+       || (sh_relax && SWITCH_TABLE (FIX))		\
+       || *symbol_get_tc ((FIX)->fx_addsy) != NULL))
 
 /* Note the kludge: we want to put back C, and we also want to consume the
    expression, since we have handled it ourselves.  FIXME: What we really

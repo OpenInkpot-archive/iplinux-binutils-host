@@ -1,6 +1,6 @@
 /* tc-i960.c - All the i80960-specific stuff
    Copyright 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2005, 2006, 2007
+   1999, 2000, 2001, 2002, 2003, 2005, 2006, 2007, 2009
    Free Software Foundation, Inc.
 
    This file is part of GAS.
@@ -1667,14 +1667,14 @@ md_assemble (char *textP)
 	  break;
 	case REG:
 	  if (branch_predict)
-	    as_warn (bp_error_msg);
+	    as_warn ("%s", bp_error_msg);
 	  reg_fmt (args, oP);
 	  break;
 	case MEM1:
 	  if (args[0][0] == 'c' && args[0][1] == 'a')
 	    {
 	      if (branch_predict)
-		as_warn (bp_error_msg);
+		as_warn ("%s", bp_error_msg);
 	      mem_fmt (args, oP, 1);
 	      break;
 	    }
@@ -1684,12 +1684,12 @@ md_assemble (char *textP)
 	case MEM12:
 	case MEM16:
 	  if (branch_predict)
-	    as_warn (bp_error_msg);
+	    as_warn ("%s", bp_error_msg);
 	  mem_fmt (args, oP, 0);
 	  break;
 	case CALLJ:
 	  if (branch_predict)
-	    as_warn (bp_error_msg);
+	    as_warn ("%s", bp_error_msg);
 	  /* Output opcode & set up "fixup" (relocation); flag
 	     relocation as 'callj' type.  */
 	  know (oP->num_ops == 1);
@@ -1710,67 +1710,10 @@ md_number_to_chars (char *buf,
   number_to_chars_littleendian (buf, value, n);
 }
 
-#define MAX_LITTLENUMS	6
-#define LNUM_SIZE	sizeof (LITTLENUM_TYPE)
-
-/* md_atof:	convert ascii to floating point
-
-   Turn a string at input_line_pointer into a floating point constant of type
-   'type', and store the appropriate bytes at *litP.  The number of LITTLENUMS
-   emitted is returned at 'sizeP'.  An error message is returned, or a pointer
-   to an empty message if OK.
-
-   Note we call the i386 floating point routine, rather than complicating
-   things with more files or symbolic links.  */
-
 char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  LITTLENUM_TYPE words[MAX_LITTLENUMS];
-  LITTLENUM_TYPE *wordP;
-  int prec;
-  char *t;
-
-  switch (type)
-    {
-    case 'f':
-    case 'F':
-      prec = 2;
-      break;
-
-    case 'd':
-    case 'D':
-      prec = 4;
-      break;
-
-    case 't':
-    case 'T':
-      prec = 5;
-      type = 'x';		/* That's what atof_ieee() understands.  */
-      break;
-
-    default:
-      *sizeP = 0;
-      return _("Bad call to md_atof()");
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * LNUM_SIZE;
-
-  /* Output the LITTLENUMs in REVERSE order in accord with i80960
-     word-order.  (Dunno why atof_ieee doesn't do it in the right
-     order in the first place -- probably because it's a hack of
-     atof_m68k.)  */
-  for (wordP = words + prec - 1; prec--;)
-    {
-      md_number_to_chars (litP, (long) (*wordP--), LNUM_SIZE);
-      litP += sizeof (LITTLENUM_TYPE);
-    }
-
-  return 0;
+  return ieee_md_atof (type, litP, sizeP, FALSE);
 }
 
 static void
@@ -2695,13 +2638,13 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixP)
   if (reloc->howto == NULL)
     {
       as_bad_where (fixP->fx_file, fixP->fx_line,
-		    "internal error: can't export reloc type %d (`%s')",
+		    _("internal error: can't export reloc type %d (`%s')"),
 		    fixP->fx_r_type,
 		    bfd_get_reloc_code_name (fixP->fx_r_type));
       return NULL;
     }
 
-  assert (!fixP->fx_pcrel == !reloc->howto->pc_relative);
+  gas_assert (!fixP->fx_pcrel == !reloc->howto->pc_relative);
 
   reloc->sym_ptr_ptr = xmalloc (sizeof (asymbol *));
   *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);

@@ -1,6 +1,6 @@
 /* as.c - GAS main program.
    Copyright 1987, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -45,13 +45,12 @@
 #ifdef HAVE_ITBL_CPU
 #include "itbl-ops.h"
 #else
-#define itbl_parse(itbl_file) 1
 #define itbl_init()
 #endif
 
 #ifdef HAVE_SBRK
 #ifdef NEED_DECLARATION_SBRK
-extern PTR sbrk ();
+extern void *sbrk ();
 #endif
 #endif
 
@@ -59,13 +58,6 @@ extern PTR sbrk ();
 /* Perform any cgen specific initialisation for gas.  */
 extern void gas_cgen_begin (void);
 #endif
-
-/* Keep a record of the itbl files we read in.  */
-struct itbl_file_list
-{
-  struct itbl_file_list *next;
-  char *name;
-};
 
 /* We build a list of defsyms as we read the options, and then define
    them after we have initialized everything.  */
@@ -117,7 +109,15 @@ static char *listing_filename = NULL;
 
 static struct defsym_list *defsyms;
 
+#ifdef HAVE_ITBL_CPU
+/* Keep a record of the itbl files we read in.  */
+struct itbl_file_list
+{
+  struct itbl_file_list *next;
+  char *name;
+};
 static struct itbl_file_list *itbl_files;
+#endif
 
 static long start_time;
 
@@ -232,6 +232,7 @@ Options:\n\
                       	  Sub-options [default hls]:\n\
                       	  c      omit false conditionals\n\
                       	  d      omit debugging directives\n\
+                      	  g      include general info\n\
                       	  h      include high-level source\n\
                       	  l      include assembly\n\
                       	  m      include macro expansions\n\
@@ -323,9 +324,11 @@ Options:\n\
   --warn                  don't suppress warnings\n"));
   fprintf (stream, _("\
   --fatal-warnings        treat warnings as errors\n"));
+#ifdef HAVE_ITBL_CPU
   fprintf (stream, _("\
   --itbl INSTTBL          extend instruction set to include instructions\n\
                           matching the specifications defined in file INSTTBL\n"));
+#endif
   fprintf (stream, _("\
   -w                      ignored\n"));
   fprintf (stream, _("\
@@ -392,8 +395,10 @@ parse_args (int * pargc, char *** pargv)
     'v',
 #endif
     'w', 'X',
+#ifdef HAVE_ITBL_CPU
     /* New option for extending instruction set (see also --itbl below).  */
     't', ':',
+#endif
     '\0'
   };
   struct option *longopts;
@@ -411,7 +416,6 @@ parse_args (int * pargc, char *** pargv)
       OPTION_EMULATION,
       OPTION_DEBUG_PREFIX_MAP,
       OPTION_DEFSYM,
-      OPTION_INSTTBL,
       OPTION_LISTING_LHS_WIDTH,
       OPTION_LISTING_LHS_WIDTH2,
       OPTION_LISTING_RHS_WIDTH,
@@ -466,13 +470,15 @@ parse_args (int * pargc, char *** pargv)
     ,{"gstabs+", no_argument, NULL, OPTION_GSTABS_PLUS}
     ,{"hash-size", required_argument, NULL, OPTION_HASH_TABLE_SIZE}
     ,{"help", no_argument, NULL, OPTION_HELP}
+#ifdef HAVE_ITBL_CPU
     /* New option for extending instruction set (see also -t above).
        The "-t file" or "--itbl file" option extends the basic set of
        valid instructions by reading "file", a text file containing a
        list of instruction formats.  The additional opcodes and their
        formats are added to the built-in set of instructions, and
        mnemonics for new registers may also be defined.  */
-    ,{"itbl", required_argument, NULL, OPTION_INSTTBL}
+    ,{"itbl", required_argument, NULL, 't'}
+#endif
     /* getopt allows abbreviations, so we do this to stop it from
        treating -k as an abbreviation for --keep-locals.  Some
        ports use -k to enable PIC assembly.  */
@@ -500,7 +506,8 @@ parse_args (int * pargc, char *** pargv)
      dependent list.  Include space for an extra NULL option and
      always NULL terminate.  */
   shortopts = concat (std_shortopts, md_shortopts, (char *) NULL);
-  longopts = xmalloc (sizeof (std_longopts) + md_longopts_size + sizeof (struct option));
+  longopts = (struct option *) xmalloc (sizeof (std_longopts)
+                                        + md_longopts_size + sizeof (struct option));
   memcpy (longopts, std_longopts, sizeof (std_longopts));
   memcpy (((char *) longopts) + sizeof (std_longopts), md_longopts, md_longopts_size);
   memset (((char *) longopts) + sizeof (std_longopts) + md_longopts_size,
@@ -511,7 +518,7 @@ parse_args (int * pargc, char *** pargv)
   old_argv = *pargv;
 
   /* Initialize a new argv that contains no options.  */
-  new_argv = xmalloc (sizeof (char *) * (old_argc + 1));
+  new_argv = (char **) xmalloc (sizeof (char *) * (old_argc + 1));
   new_argv[0] = old_argv[0];
   new_argc = 1;
   new_argv[new_argc] = NULL;
@@ -594,7 +601,7 @@ parse_args (int * pargc, char *** pargv)
 	case OPTION_VERSION:
 	  /* This output is intended to follow the GNU standards document.  */
 	  printf (_("GNU assembler %s\n"), BFD_VERSION_STRING);
-	  printf (_("Copyright 2007 Free Software Foundation, Inc.\n"));
+	  printf (_("Copyright 2009 Free Software Foundation, Inc.\n"));
 	  printf (_("\
 This program is free software; you may redistribute it under the terms of\n\
 the GNU General Public License version 3 or later.\n\
@@ -640,7 +647,7 @@ This program has absolutely no warranty.\n"));
 	      as_fatal (_("bad defsym; format is --defsym name=value"));
 	    *s++ = '\0';
 	    i = bfd_scan_vma (s, (const char **) NULL, 0);
-	    n = xmalloc (sizeof *n);
+	    n = (struct defsym_list *) xmalloc (sizeof *n);
 	    n->next = defsyms;
 	    n->name = optarg;
 	    n->value = i;
@@ -648,7 +655,7 @@ This program has absolutely no warranty.\n"));
 	  }
 	  break;
 
-	case OPTION_INSTTBL:
+#ifdef HAVE_ITBL_CPU
 	case 't':
 	  {
 	    /* optarg is the name of the file containing the instruction
@@ -676,6 +683,7 @@ This program has absolutely no warranty.\n"));
 			itbl_files->name);
 	  }
 	  break;
+#endif
 
 	case OPTION_DEPFILE:
 	  start_dependencies (optarg);
@@ -819,6 +827,9 @@ This program has absolutely no warranty.\n"));
 		    case 'd':
 		      listing |= LISTING_NODEBUG;
 		      break;
+		    case 'g':
+		      listing |= LISTING_GENERAL;
+		      break;
 		    case 'h':
 		      listing |= LISTING_HLL;
 		      break;
@@ -938,13 +949,11 @@ dump_statistics (void)
 #endif
 }
 
-#ifndef OBJ_VMS
 static void
 close_output_file (void)
 {
   output_file_close (out_file_name);
 }
-#endif
 
 /* The interface between the macro code and gas expression handling.  */
 
@@ -1071,6 +1080,8 @@ create_obj_attrs_section (void)
 int
 main (int argc, char ** argv)
 {
+  char ** argv_orig = argv;
+
   int macro_strip_at;
   int keep_it;
 
@@ -1124,10 +1135,8 @@ main (int argc, char ** argv)
   input_scrub_begin ();
   expr_begin ();
 
-#ifndef OBJ_VMS /* Does its own file handling.  */
   /* It has to be called after dump_statistics ().  */
   xatexit (close_output_file);
-#endif
 
   if (flag_print_statistics)
     xatexit (dump_statistics);
@@ -1142,7 +1151,7 @@ main (int argc, char ** argv)
   PROGRESS (1);
 
   output_file_create (out_file_name);
-  assert (stdoutput != 0);
+  gas_assert (stdoutput != 0);
 
 #ifdef tc_init_after_args
   tc_init_after_args ();
@@ -1223,8 +1232,10 @@ main (int argc, char ** argv)
   if (keep_it)
     write_object_file ();
 
+  fflush (stderr);
+
 #ifndef NO_LISTING
-  listing_print (listing_filename);
+  listing_print (listing_filename, argv_orig);
 #endif
 
   if (flag_fatal_warnings && had_warnings () > 0 && had_errors () == 0)

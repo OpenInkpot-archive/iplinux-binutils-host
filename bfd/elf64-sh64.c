@@ -1,5 +1,5 @@
 /* SuperH SH64-specific support for 64-bit ELF
-   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
    Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -1725,22 +1725,10 @@ sh_elf64_relocate_section (bfd *output_bfd ATTRIBUTE_UNUSED,
 
 	      if (sreloc == NULL)
 		{
-		  const char *name;
-
-		  name = (bfd_elf_string_from_elf_section
-			  (input_bfd,
-			   elf_elfheader (input_bfd)->e_shstrndx,
-			   elf_section_data (input_section)->rel_hdr.sh_name));
-		  if (name == NULL)
+		  sreloc = _bfd_elf_get_dynamic_reloc_section
+		    (input_bfd, input_section, /*rela?*/ TRUE);
+		  if (sreloc == NULL)
 		    return FALSE;
-
-		  BFD_ASSERT (CONST_STRNEQ (name, ".rela")
-			      && strcmp (bfd_get_section_name (input_bfd,
-							       input_section),
-					 name + 5) == 0);
-
-		  sreloc = bfd_get_section_by_name (dynobj, name);
-		  BFD_ASSERT (sreloc != NULL);
 		}
 
 	      skip = FALSE;
@@ -2195,17 +2183,12 @@ sh_elf64_get_relocated_section_contents (bfd *output_bfd,
 
 	  if (isymp->st_shndx == SHN_UNDEF)
 	    isec = bfd_und_section_ptr;
-	  else if (isymp->st_shndx > 0 && isymp->st_shndx < SHN_LORESERVE)
-	    isec = bfd_section_from_elf_index (input_bfd, isymp->st_shndx);
 	  else if (isymp->st_shndx == SHN_ABS)
 	    isec = bfd_abs_section_ptr;
 	  else if (isymp->st_shndx == SHN_COMMON)
 	    isec = bfd_com_section_ptr;
 	  else
-	    {
-	      /* Who knows?  */
-	      isec = NULL;
-	    }
+	    isec = bfd_section_from_elf_index (input_bfd, isymp->st_shndx);
 
 	  *secpp = isec;
 	}
@@ -2419,7 +2402,7 @@ sh_elf64_check_relocs (bfd *abfd, struct bfd_link_info *info,
 		       asection *sec, const Elf_Internal_Rela *relocs)
 {
   Elf_Internal_Shdr *symtab_hdr;
-  struct elf_link_hash_entry **sym_hashes, **sym_hashes_end;
+  struct elf_link_hash_entry **sym_hashes;
   const Elf_Internal_Rela *rel;
   const Elf_Internal_Rela *rel_end;
   bfd *dynobj;
@@ -2437,9 +2420,6 @@ sh_elf64_check_relocs (bfd *abfd, struct bfd_link_info *info,
 
   symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size/sizeof(Elf64_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
 
   dynobj = elf_hash_table (info)->dynobj;
   local_got_offsets = elf_local_got_offsets (abfd);
@@ -2508,7 +2488,9 @@ sh_elf64_check_relocs (bfd *abfd, struct bfd_link_info *info,
 	  /* This relocation describes which C++ vtable entries are actually
 	     used.  Record for later use during GC.  */
         case R_SH_GNU_VTENTRY:
-          if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+          BFD_ASSERT (h != NULL);
+          if (h != NULL
+              && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
             return FALSE;
           break;
 
@@ -2717,35 +2699,11 @@ sh_elf64_check_relocs (bfd *abfd, struct bfd_link_info *info,
 		 section in dynobj and make room for this reloc.  */
 	      if (sreloc == NULL)
 		{
-		  const char *name;
+		  sreloc = _bfd_elf_make_dynamic_reloc_section
+		    (sec, dynobj, 2, abfd, /*rela?*/ TRUE);
 
-		  name = (bfd_elf_string_from_elf_section
-			  (abfd,
-			   elf_elfheader (abfd)->e_shstrndx,
-			   elf_section_data (sec)->rel_hdr.sh_name));
-		  if (name == NULL)
-		    return FALSE;
-
-		  BFD_ASSERT (CONST_STRNEQ (name, ".rela")
-			      && strcmp (bfd_get_section_name (abfd, sec),
-					 name + 5) == 0);
-
-		  sreloc = bfd_get_section_by_name (dynobj, name);
 		  if (sreloc == NULL)
-		    {
-		      flagword flags;
-
-		      flags = (SEC_HAS_CONTENTS | SEC_READONLY
-			       | SEC_IN_MEMORY | SEC_LINKER_CREATED);
-		      if ((sec->flags & SEC_ALLOC) != 0)
-			flags |= SEC_ALLOC | SEC_LOAD;
-		      sreloc = bfd_make_section_with_flags (dynobj,
-							    name,
-							    flags);
-		      if (sreloc == NULL
-			  || ! bfd_set_section_alignment (dynobj, sreloc, 2))
-			return FALSE;
-		    }
+		    return FALSE;
 		}
 
 	      sreloc->size += sizeof (Elf64_External_Rela);
@@ -2921,7 +2879,7 @@ sh64_elf64_add_symbol_hook (bfd *abfd, struct bfd_link_info *info,
    we don't need to look up and make sure to emit the main symbol for each
    DataLabel symbol.  */
 
-static bfd_boolean
+static int
 sh64_elf64_link_output_symbol_hook (struct bfd_link_info *info,
 				    const char *cname,
 				    Elf_Internal_Sym *sym,
@@ -2936,7 +2894,7 @@ sh64_elf64_link_output_symbol_hook (struct bfd_link_info *info,
 	name[strlen (name) - strlen (DATALABEL_SUFFIX)] = 0;
     }
 
-  return TRUE;
+  return 1;
 }
 
 /* Set bit 0 on the entry address; it always points to SHmedia code.  This

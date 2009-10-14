@@ -1,6 +1,6 @@
 /* bfd back-end for HP PA-RISC SOM objects.
    Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999,
-   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
    Free Software Foundation, Inc.
 
    Contributed by the Center for Software Science at the
@@ -328,7 +328,7 @@ static const struct fixup_format som_fixup_formats[256] =
   /* R_DATA_ONE_SYMBOL.  */
   {  0, "L4=Sb=" },		/* 0x25 */
   {  1, "L4=Sd=" },		/* 0x26 */
-  /* R_DATA_PLEBEL.  */
+  /* R_DATA_PLABEL.  */
   {  0, "L4=Sb=" },		/* 0x27 */
   {  1, "L4=Sd=" },		/* 0x28 */
   /* R_SPACE_REF.  */
@@ -412,8 +412,9 @@ static const struct fixup_format som_fixup_formats[256] =
   { 31, "L4=SD=" },		/* 0x6f */
   { 32, "L4=Sb=" },		/* 0x70 */
   { 33, "L4=Sd=" },		/* 0x71 */
+  /* R_DATA_GPREL.  */
+  {  0, "L4=Sd=" },		/* 0x72 */
   /* R_RESERVED.  */
-  {  0, "" },			/* 0x72 */
   {  0, "" },			/* 0x73 */
   {  0, "" },			/* 0x74 */
   {  0, "" },			/* 0x75 */
@@ -800,7 +801,7 @@ static reloc_howto_type som_hppa_howto_table[] =
   SOM_HOWTO (R_DP_RELATIVE, "R_DP_RELATIVE"),
   SOM_HOWTO (R_DP_RELATIVE, "R_DP_RELATIVE"),
   SOM_HOWTO (R_DP_RELATIVE, "R_DP_RELATIVE"),
-  SOM_HOWTO (R_DP_RELATIVE, "R_DP_RELATIVE"),
+  SOM_HOWTO (R_DATA_GPREL, "R_DATA_GPREL"),
   SOM_HOWTO (R_RESERVED, "R_RESERVED"),
   SOM_HOWTO (R_RESERVED, "R_RESERVED"),
   SOM_HOWTO (R_RESERVED, "R_RESERVED"),
@@ -1546,6 +1547,8 @@ hppa_som_gen_reloc_type (bfd *abfd,
 	  || field == e_lpsel
 	  || field == e_rpsel)
 	*final_type = R_DATA_PLABEL;
+      else if (field == e_fsel && format == 32)
+	*final_type = R_DATA_GPREL;
       break;
 
     case R_HPPA_COMPLEX:
@@ -2774,6 +2777,24 @@ som_write_fixups (bfd *abfd,
 		    abort ();
 		  break;
 
+		case R_DATA_GPREL:
+		  /* Account for any addend.  */
+		  if (bfd_reloc->addend)
+		    p = som_reloc_addend (abfd, bfd_reloc->addend, p,
+					  &subspace_reloc_size, reloc_queue);
+
+		  if (sym_num < 0x10000000)
+		    {
+		      bfd_put_8 (abfd, bfd_reloc->howto->type, p);
+		      bfd_put_8 (abfd, sym_num >> 16, p + 1);
+		      bfd_put_16 (abfd, (bfd_vma) sym_num, p + 2);
+		      p = try_prev_fixup (abfd, &subspace_reloc_size,
+					  p, 4, reloc_queue);
+		    }
+		  else
+		    abort ();
+		  break;
+
 		case R_DATA_ONE_SYMBOL:
 		case R_DATA_PLABEL:
 		case R_CODE_PLABEL:
@@ -3969,7 +3990,9 @@ som_bfd_derive_misc_symbol_info (bfd *abfd ATTRIBUTE_UNUSED,
 	 section (ST_DATA for DATA sections, ST_CODE for CODE sections).  */
       else if (som_symbol_data (sym)->som_type == SYMBOL_TYPE_UNKNOWN)
 	{
-	  if (sym->section->flags & SEC_CODE)
+	  if (bfd_is_abs_section (sym->section))
+	    info->symbol_type = ST_ABSOLUTE;
+	  else if (sym->section->flags & SEC_CODE)
 	    info->symbol_type = ST_CODE;
 	  else
 	    info->symbol_type = ST_DATA;
@@ -4449,13 +4472,13 @@ static asymbol *
 som_make_empty_symbol (bfd *abfd)
 {
   bfd_size_type amt = sizeof (som_symbol_type);
-  som_symbol_type *new = bfd_zalloc (abfd, amt);
+  som_symbol_type *new_symbol_type = bfd_zalloc (abfd, amt);
 
-  if (new == NULL)
+  if (new_symbol_type == NULL)
     return NULL;
-  new->symbol.the_bfd = abfd;
+  new_symbol_type->symbol.the_bfd = abfd;
 
-  return &new->symbol;
+  return &new_symbol_type->symbol;
 }
 
 /* Print symbol information.  */
@@ -4939,8 +4962,11 @@ som_get_reloc_upper_bound (bfd *abfd, sec_ptr asect)
 	return -1;
       return (asect->reloc_count + 1) * sizeof (arelent *);
     }
-  /* There are no relocations.  */
-  return 0;
+
+  /* There are no relocations.  Return enough space to hold the
+     NULL pointer which will be installed if som_canonicalize_reloc
+     is called.  */
+  return sizeof (arelent *);
 }
 
 /* Convert relocations from SOM (external) form into BFD internal
@@ -5331,15 +5357,57 @@ som_set_arch_mach (bfd *abfd,
 }
 
 static bfd_boolean
-som_find_nearest_line (bfd *abfd ATTRIBUTE_UNUSED,
-		       asection *section ATTRIBUTE_UNUSED,
-		       asymbol **symbols ATTRIBUTE_UNUSED,
-		       bfd_vma offset ATTRIBUTE_UNUSED,
-		       const char **filename_ptr ATTRIBUTE_UNUSED,
-		       const char **functionname_ptr ATTRIBUTE_UNUSED,
-		       unsigned int *line_ptr ATTRIBUTE_UNUSED)
+som_find_nearest_line (bfd *abfd,
+		       asection *section,
+		       asymbol **symbols,
+		       bfd_vma offset,
+		       const char **filename_ptr,
+		       const char **functionname_ptr,
+		       unsigned int *line_ptr)
 {
-  return FALSE;
+  bfd_boolean found;
+  asymbol *func;
+  bfd_vma low_func;
+  asymbol **p;
+
+  if (! _bfd_stab_section_find_nearest_line (abfd, symbols, section, offset,
+                                             & found, filename_ptr,
+                                             functionname_ptr, line_ptr,
+                                             & somdata (abfd).line_info))
+    return FALSE;
+
+  if (found)
+    return TRUE;
+
+  if (symbols == NULL)
+    return FALSE;
+
+  /* Fallback: find function name from symbols table.  */
+  func = NULL;
+  low_func = 0;
+
+  for (p = symbols; *p != NULL; p++)
+    { 
+      som_symbol_type *q = (som_symbol_type *) *p;
+  
+      if (q->som_type == SYMBOL_TYPE_ENTRY
+	  && q->symbol.section == section
+	  && q->symbol.value >= low_func
+	  && q->symbol.value <= offset)
+	{
+	  func = (asymbol *) q;
+	  low_func = q->symbol.value;
+	}
+    }
+
+  if (func == NULL)
+    return FALSE;
+
+  *filename_ptr = NULL;
+  *functionname_ptr = bfd_asymbol_name (func);
+  *line_ptr = 0;
+
+  return TRUE;
 }
 
 static int
@@ -6281,6 +6349,7 @@ som_bfd_link_split_section (bfd *abfd ATTRIBUTE_UNUSED, asection *sec)
 #define som_bfd_is_group_section	        bfd_generic_is_group_section
 #define som_bfd_discard_group		        bfd_generic_discard_group
 #define som_section_already_linked              _bfd_generic_section_already_linked
+#define som_bfd_define_common_symbol            bfd_generic_define_common_symbol
 #define som_bfd_merge_private_bfd_data		_bfd_generic_bfd_merge_private_bfd_data
 #define som_bfd_copy_private_header_data	_bfd_generic_bfd_copy_private_header_data
 #define som_bfd_set_private_flags		_bfd_generic_bfd_set_private_flags

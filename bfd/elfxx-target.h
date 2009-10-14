@@ -1,6 +1,6 @@
 /* Target definitions for NN-bit ELF
    Copyright 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002,
-   2003, 2004, 2005, 2006, 2007 Free Software Foundation, Inc.
+   2003, 2004, 2005, 2006, 2007, 2008, 2009 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -132,6 +132,9 @@
 #ifndef elf_backend_want_got_sym
 #define elf_backend_want_got_sym 1
 #endif
+#ifndef elf_backend_gc_keep
+#define elf_backend_gc_keep		_bfd_elf_gc_keep
+#endif
 #ifndef elf_backend_gc_mark_dynamic_ref
 #define elf_backend_gc_mark_dynamic_ref	bfd_elf_gc_mark_dynamic_ref_symbol
 #endif
@@ -164,6 +167,10 @@
 #ifndef bfd_elfNN_section_already_linked
 #define bfd_elfNN_section_already_linked \
   _bfd_elf_section_already_linked
+#endif
+
+#ifndef bfd_elfNN_bfd_define_common_symbol
+#define bfd_elfNN_bfd_define_common_symbol bfd_generic_define_common_symbol
 #endif
 
 #ifndef bfd_elfNN_bfd_make_debug_symbol
@@ -266,7 +273,7 @@
 #endif
 
 #ifndef bfd_elfNN_mkobject
-#define bfd_elfNN_mkobject bfd_elf_mkobject
+#define bfd_elfNN_mkobject bfd_elf_make_generic_object
 #endif
 
 #ifndef bfd_elfNN_mkcorefile
@@ -298,16 +305,23 @@
 #endif
 
 #ifndef ELF_MAXPAGESIZE
-  #error ELF_MAXPAGESIZE is not defined
+# error ELF_MAXPAGESIZE is not defined
 #define ELF_MAXPAGESIZE 1
-#endif
-
-#ifndef ELF_MINPAGESIZE
-#define ELF_MINPAGESIZE ELF_MAXPAGESIZE
 #endif
 
 #ifndef ELF_COMMONPAGESIZE
 #define ELF_COMMONPAGESIZE ELF_MAXPAGESIZE
+#endif
+
+#ifndef ELF_MINPAGESIZE
+#define ELF_MINPAGESIZE ELF_COMMONPAGESIZE
+#endif
+
+#if ELF_COMMONPAGESIZE > ELF_MAXPAGESIZE
+# error ELF_COMMONPAGESIZE > ELF_MAXPAGESIZE
+#endif
+#if ELF_MINPAGESIZE > ELF_COMMONPAGESIZE
+# error ELF_MINPAGESIZE > ELF_COMMONPAGESIZE
 #endif
 
 #ifndef ELF_DYNAMIC_SEC_FLAGS
@@ -378,6 +392,9 @@
 #ifndef elf_backend_omit_section_dynsym
 #define elf_backend_omit_section_dynsym _bfd_elf_link_omit_section_dynsym
 #endif
+#ifndef elf_backend_relocs_compatible
+#define elf_backend_relocs_compatible _bfd_elf_default_relocs_compatible
+#endif
 #ifndef elf_backend_check_relocs
 #define elf_backend_check_relocs	0
 #endif
@@ -433,6 +450,9 @@
 #ifndef elf_backend_got_header_size
 #define elf_backend_got_header_size	0
 #endif
+#ifndef elf_backend_got_elt_size
+#define elf_backend_got_elt_size _bfd_elf_default_got_elt_size
+#endif
 #ifndef elf_backend_obj_attrs_vendor
 #define elf_backend_obj_attrs_vendor		NULL
 #endif
@@ -444,6 +464,9 @@
 #endif
 #ifndef elf_backend_obj_attrs_section_type
 #define elf_backend_obj_attrs_section_type		SHT_GNU_ATTRIBUTES
+#endif
+#ifndef elf_backend_obj_attrs_order
+#define elf_backend_obj_attrs_order		NULL
 #endif
 #ifndef elf_backend_post_process_headers
 #define elf_backend_post_process_headers	NULL
@@ -469,6 +492,9 @@
 #ifndef elf_backend_merge_symbol_attribute
 #define elf_backend_merge_symbol_attribute	NULL
 #endif
+#ifndef elf_backend_get_target_dtag
+#define elf_backend_get_target_dtag		NULL
+#endif
 #ifndef elf_backend_ignore_undef_symbol
 #define elf_backend_ignore_undef_symbol		NULL
 #endif
@@ -486,12 +512,6 @@
 #endif
 #ifndef elf_backend_write_core_note
 #define elf_backend_write_core_note		NULL
-#endif
-#ifndef elf_backend_sprintf_vma
-#define elf_backend_sprintf_vma			_bfd_elf_sprintf_vma
-#endif
-#ifndef elf_backend_fprintf_vma
-#define elf_backend_fprintf_vma			_bfd_elf_fprintf_vma
 #endif
 #ifndef elf_backend_reloc_type_class
 #define elf_backend_reloc_type_class		_bfd_elf_reloc_type_class
@@ -544,6 +564,9 @@
 #endif
 #ifndef elf_backend_default_use_rela_p
 #define elf_backend_default_use_rela_p !USE_REL
+#endif
+#ifndef elf_backend_rela_plts_and_copies_p
+#define elf_backend_rela_plts_and_copies_p elf_backend_default_use_rela_p
 #endif
 
 #ifndef elf_backend_rela_normal
@@ -636,6 +659,7 @@ static struct elf_backend_data elfNN_bed =
   elf_backend_link_output_symbol_hook,
   elf_backend_create_dynamic_sections,
   elf_backend_omit_section_dynsym,
+  elf_backend_relocs_compatible,
   elf_backend_check_relocs,
   elf_backend_check_directives,
   elf_backend_as_needed_cleanup,
@@ -651,6 +675,7 @@ static struct elf_backend_data elfNN_bed =
   elf_backend_additional_program_headers,
   elf_backend_modify_segment_map,
   elf_backend_modify_program_headers,
+  elf_backend_gc_keep,
   elf_backend_gc_mark_dynamic_ref,
   elf_backend_gc_mark_hook,
   elf_backend_gc_mark_extra_sections,
@@ -663,14 +688,13 @@ static struct elf_backend_data elfNN_bed =
   elf_backend_hide_symbol,
   elf_backend_fixup_symbol,
   elf_backend_merge_symbol_attribute,
+  elf_backend_get_target_dtag,
   elf_backend_ignore_undef_symbol,
   elf_backend_emit_relocs,
   elf_backend_count_relocs,
   elf_backend_grok_prstatus,
   elf_backend_grok_psinfo,
   elf_backend_write_core_note,
-  elf_backend_sprintf_vma,
-  elf_backend_fprintf_vma,
   elf_backend_reloc_type_class,
   elf_backend_discard_info,
   elf_backend_ignore_discarded_relocs,
@@ -698,15 +722,18 @@ static struct elf_backend_data elfNN_bed =
   &elf_backend_size_info,
   elf_backend_special_sections,
   elf_backend_got_header_size,
+  elf_backend_got_elt_size,
   elf_backend_obj_attrs_vendor,
   elf_backend_obj_attrs_section,
   elf_backend_obj_attrs_arg_type,
   elf_backend_obj_attrs_section_type,
+  elf_backend_obj_attrs_order,
   elf_backend_collect,
   elf_backend_type_change_ok,
   elf_backend_may_use_rel_p,
   elf_backend_may_use_rela_p,
   elf_backend_default_use_rela_p,
+  elf_backend_rela_plts_and_copies_p,
   elf_backend_rela_normal,
   elf_backend_sign_extend_vma,
   elf_backend_want_got_plt,

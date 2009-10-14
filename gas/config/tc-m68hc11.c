@@ -1,5 +1,5 @@
 /* tc-m68hc11.c -- Assembler code for the Motorola 68HC11 & 68HC12.
-   Copyright 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   Copyright 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2009
    Free Software Foundation, Inc.
    Written by Stephane Carrez (stcarrez@nerim.fr)
 
@@ -263,7 +263,7 @@ const pseudo_typeS md_pseudo_table[] = {
   /* The following pseudo-ops are supported for MRI compatibility.  */
   {"fcb", cons, 1},
   {"fdb", cons, 2},
-  {"fcc", stringer, 1},
+  {"fcc", stringer, 8 + 1},
   {"rmb", s_space, 0},
 
   /* Motorola ALIS.  */
@@ -514,62 +514,10 @@ md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
   return 0;
 }
 
-/* Equal to MAX_PRECISION in atof-ieee.c.  */
-#define MAX_LITTLENUMS 6
-
-/* Turn a string in input_line_pointer into a floating point constant
-   of type TYPE, and store the appropriate bytes in *LITP.  The number
-   of LITTLENUMS emitted is stored in *SIZEP.  An error message is
-   returned, or NULL on OK.  */
 char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  int prec;
-  LITTLENUM_TYPE words[MAX_LITTLENUMS];
-  LITTLENUM_TYPE *wordP;
-  char *t;
-
-  switch (type)
-    {
-    case 'f':
-    case 'F':
-    case 's':
-    case 'S':
-      prec = 2;
-      break;
-
-    case 'd':
-    case 'D':
-    case 'r':
-    case 'R':
-      prec = 4;
-      break;
-
-    case 'x':
-    case 'X':
-      prec = 6;
-      break;
-
-    case 'p':
-    case 'P':
-      prec = 6;
-      break;
-
-    default:
-      *sizeP = 0;
-      return _("Bad call to MD_ATOF()");
-    }
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * sizeof (LITTLENUM_TYPE);
-  for (wordP = words; prec--;)
-    {
-      md_number_to_chars (litP, (long) (*wordP++), sizeof (LITTLENUM_TYPE));
-      litP += sizeof (LITTLENUM_TYPE);
-    }
-  return 0;
+  return ieee_md_atof (type, litP, sizeP, TRUE);
 }
 
 valueT
@@ -1574,9 +1522,9 @@ build_jump_insn (struct m68hc11_opcode *opcode, operand operands[],
 
   /* The relative branch conversion is not supported for
      brclr and brset.  */
-  assert ((opcode->format & M6811_OP_BITMASK) == 0);
-  assert (nb_operands == 1);
-  assert (operands[0].reg1 == REG_NONE && operands[0].reg2 == REG_NONE);
+  gas_assert ((opcode->format & M6811_OP_BITMASK) == 0);
+  gas_assert (nb_operands == 1);
+  gas_assert (operands[0].reg1 == REG_NONE && operands[0].reg2 == REG_NONE);
 
   code = opcode->opcode;
 
@@ -1724,9 +1672,9 @@ build_dbranch_insn (struct m68hc11_opcode *opcode, operand operands[],
 
   /* The relative branch conversion is not supported for
      brclr and brset.  */
-  assert ((opcode->format & M6811_OP_BITMASK) == 0);
-  assert (nb_operands == 2);
-  assert (operands[0].reg1 != REG_NONE);
+  gas_assert ((opcode->format & M6811_OP_BITMASK) == 0);
+  gas_assert (nb_operands == 2);
+  gas_assert (operands[0].reg1 != REG_NONE);
 
   code = opcode->opcode & 0x0FF;
 
@@ -2670,7 +2618,7 @@ s_m68hc11_mark_symbol (int mark)
       bfdsym = symbol_get_bfdsym (symbolP);
       elfsym = elf_symbol_from (bfd_asymbol_bfd (bfdsym), bfdsym);
 
-      assert (elfsym);
+      gas_assert (elfsym);
 
       /* Mark the symbol far (using rtc for function return).  */
       elfsym->internal_elf_sym.st_other |= mark;
@@ -2875,7 +2823,7 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED, asection *sec ATTRIBUTE_UNUSED,
 
     case ENCODE_RELAX (STATE_PC_RELATIVE, STATE_WORD):
       /* This relax is only for bsr and bra.  */
-      assert (IS_OPCODE (fragP->fr_opcode[0], M6811_BSR)
+      gas_assert (IS_OPCODE (fragP->fr_opcode[0], M6811_BSR)
 	      || IS_OPCODE (fragP->fr_opcode[0], M6811_BRA)
 	      || IS_OPCODE (fragP->fr_opcode[0], M6812_BSR));
 
@@ -3016,7 +2964,7 @@ md_estimate_size_before_relax (fragS *fragP, asection *segment)
 	    case STATE_PC_RELATIVE:
 
 	      /* This relax is only for bsr and bra.  */
-	      assert (IS_OPCODE (fragP->fr_opcode[0], M6811_BSR)
+	      gas_assert (IS_OPCODE (fragP->fr_opcode[0], M6811_BSR)
 		      || IS_OPCODE (fragP->fr_opcode[0], M6811_BRA)
 		      || IS_OPCODE (fragP->fr_opcode[0], M6812_BSR));
 
@@ -3036,7 +2984,7 @@ md_estimate_size_before_relax (fragS *fragP, asection *segment)
 	      break;
 
 	    case STATE_CONDITIONAL_BRANCH:
-	      assert (current_architecture & cpu6811);
+	      gas_assert (current_architecture & cpu6811);
 
 	      fragP->fr_opcode[0] ^= 1;	/* Reverse sense of branch.  */
 	      fragP->fr_opcode[1] = 3;	/* Skip next jmp insn (3 bytes).  */
@@ -3052,7 +3000,7 @@ md_estimate_size_before_relax (fragS *fragP, asection *segment)
 	      break;
 
 	    case STATE_INDEXED_OFFSET:
-	      assert (current_architecture & cpu6812);
+	      gas_assert (current_architecture & cpu6812);
 
               if (fragP->fr_symbol
                   && S_GET_SEGMENT (fragP->fr_symbol) == absolute_section)
@@ -3074,7 +3022,7 @@ md_estimate_size_before_relax (fragS *fragP, asection *segment)
 	      break;
 
 	    case STATE_INDEXED_PCREL:
-	      assert (current_architecture & cpu6812);
+	      gas_assert (current_architecture & cpu6812);
 
               if (fragP->fr_symbol
                   && S_GET_SEGMENT (fragP->fr_symbol) == absolute_section)
@@ -3097,7 +3045,7 @@ md_estimate_size_before_relax (fragS *fragP, asection *segment)
 	      break;
 
 	    case STATE_XBCC_BRANCH:
-	      assert (current_architecture & cpu6812);
+	      gas_assert (current_architecture & cpu6812);
 
 	      fragP->fr_opcode[0] ^= 0x20;	/* Reverse sense of branch.  */
 	      fragP->fr_opcode[1] = 3;	/* Skip next jmp insn (3 bytes).  */
@@ -3113,7 +3061,7 @@ md_estimate_size_before_relax (fragS *fragP, asection *segment)
 	      break;
 
 	    case STATE_CONDITIONAL_BRANCH_6812:
-	      assert (current_architecture & cpu6812);
+	      gas_assert (current_architecture & cpu6812);
 
 	      /* Translate into a lbcc branch.  */
 	      fragP->fr_opcode[1] = fragP->fr_opcode[0];
@@ -3138,7 +3086,7 @@ md_estimate_size_before_relax (fragS *fragP, asection *segment)
 	{
 	case STATE_PC_RELATIVE:
 	  /* This relax is only for bsr and bra.  */
-	  assert (IS_OPCODE (fragP->fr_opcode[0], M6811_BSR)
+	  gas_assert (IS_OPCODE (fragP->fr_opcode[0], M6811_BSR)
 		  || IS_OPCODE (fragP->fr_opcode[0], M6811_BRA)
 		  || IS_OPCODE (fragP->fr_opcode[0], M6812_BSR));
 
@@ -3146,34 +3094,34 @@ md_estimate_size_before_relax (fragS *fragP, asection *segment)
 	  break;
 
 	case STATE_CONDITIONAL_BRANCH:
-	  assert (current_architecture & cpu6811);
+	  gas_assert (current_architecture & cpu6811);
 
 	  fragP->fr_subtype = ENCODE_RELAX (STATE_CONDITIONAL_BRANCH,
 					    STATE_BYTE);
 	  break;
 
 	case STATE_INDEXED_OFFSET:
-	  assert (current_architecture & cpu6812);
+	  gas_assert (current_architecture & cpu6812);
 
 	  fragP->fr_subtype = ENCODE_RELAX (STATE_INDEXED_OFFSET,
 					    STATE_BITS5);
 	  break;
 
 	case STATE_INDEXED_PCREL:
-	  assert (current_architecture & cpu6812);
+	  gas_assert (current_architecture & cpu6812);
 
 	  fragP->fr_subtype = ENCODE_RELAX (STATE_INDEXED_PCREL,
 					    STATE_BITS5);
 	  break;
 
 	case STATE_XBCC_BRANCH:
-	  assert (current_architecture & cpu6812);
+	  gas_assert (current_architecture & cpu6812);
 
 	  fragP->fr_subtype = ENCODE_RELAX (STATE_XBCC_BRANCH, STATE_BYTE);
 	  break;
 
 	case STATE_CONDITIONAL_BRANCH_6812:
-	  assert (current_architecture & cpu6812);
+	  gas_assert (current_architecture & cpu6812);
 
 	  fragP->fr_subtype = ENCODE_RELAX (STATE_CONDITIONAL_BRANCH_6812,
 					    STATE_BYTE);

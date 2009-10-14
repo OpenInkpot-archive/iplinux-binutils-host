@@ -1,5 +1,6 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright 2003, 2004, 2005, 2007 Free Software Foundation, Inc.
+#   Copyright 2003, 2004, 2005, 2007, 2008, 2009
+#   Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
 #
@@ -32,8 +33,6 @@ static bfd_boolean limit_32bit;
 static bfd_boolean disable_relaxation;
 
 extern bfd_boolean elf64_alpha_use_secureplt;
-extern const bfd_target bfd_elf64_alpha_vec;
-extern const bfd_target bfd_elf64_alpha_freebsd_vec;
 
 
 /* Set the start address as in the Tru64 ld.  */
@@ -42,8 +41,8 @@ extern const bfd_target bfd_elf64_alpha_freebsd_vec;
 static void
 alpha_after_open (void)
 {
-  if (link_info.hash->creator == &bfd_elf64_alpha_vec
-      || link_info.hash->creator == &bfd_elf64_alpha_freebsd_vec)
+  if (bfd_get_flavour (link_info.output_bfd) == bfd_target_elf_flavour
+      && elf_object_id (link_info.output_bfd) == ALPHA_ELF_TDATA)
     {
       unsigned int num_plt;
       lang_output_section_statement_type *os;
@@ -81,6 +80,8 @@ alpha_after_parse (void)
 				   exp_intop (ALPHA_TEXT_START_32BIT),
 				   exp_nameop (SIZEOF_HEADERS, NULL)),
 			NULL);
+
+  after_parse_default ();
 }
 
 static void
@@ -98,9 +99,9 @@ static void
 alpha_finish (void)
 {
   if (limit_32bit)
-    elf_elfheader (output_bfd)->e_flags |= EF_ALPHA_32BIT;
+    elf_elfheader (link_info.output_bfd)->e_flags |= EF_ALPHA_32BIT;
 
-  gld${EMULATION_NAME}_finish ();
+  finish_default ();
 }
 EOF
 
@@ -123,11 +124,11 @@ PARSE_AND_LIST_LONGOPTS='
 
 PARSE_AND_LIST_OPTIONS='
   fprintf (file, _("\
-  --taso		Load executable in the lower 31-bit addressable\n\
-			virtual address range.\n\
-  --no-relax		Do not relax call and gp sequences.\n\
-  --secureplt		Force PLT in text segment.\n\
-  --no-secureplt	Force PLT in data segment.\n\
+  --taso                      Load executable in the lower 31-bit addressable\n\
+                                virtual address range.\n\
+  --no-relax                  Do not relax call and gp sequences.\n\
+  --secureplt                 Force PLT in text segment.\n\
+  --no-secureplt              Force PLT in data segment.\n\
 "));
 '
 

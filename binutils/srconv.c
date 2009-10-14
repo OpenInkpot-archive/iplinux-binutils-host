@@ -1,6 +1,6 @@
 /* srconv.c -- Sysroff conversion program
    Copyright 1994, 1995, 1996, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2007 Free Software Foundation, Inc.
+   2005, 2007, 2008 Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
 
@@ -176,7 +176,9 @@ checksum (FILE *file, unsigned char *ptr, int size, int code)
 
   /* Glue on a checksum too.  */
   ptr[bytes] = ~sum;
-  fwrite (ptr, bytes + 1, 1, file);
+  if (fwrite (ptr, bytes + 1, 1, file) != 1)
+    /* FIXME: Return error status.  */
+    abort ();
 }
 
 
@@ -299,7 +301,10 @@ wr_tr (void)
       0x03,			/* RL */
       0xfd,			/* CS */
     };
-  fwrite (b, 1, sizeof (b), file);
+
+  if (fwrite (b, sizeof (b), 1, file) != 1)
+    /* FIXME: Return error status.  */
+    abort ();
 }
 
 static void
@@ -410,7 +415,7 @@ wr_hd (struct coff_ofile *p)
       abort ();
     }
 
-  if (! bfd_get_file_flags(abfd) & EXEC_P)
+  if (! (bfd_get_file_flags(abfd) & EXEC_P))
     {
       hd.ep = 0;
     }
@@ -1452,7 +1457,10 @@ wr_cs (void)
     0x00,			/* dot */
     0xDE			/* CS */
   };
-  fwrite (b, 1, sizeof (b), file);
+
+  if (fwrite (b, sizeof (b), 1, file) != 1)
+    /* FIXME: Return error status.  */
+    abort ();
 }
 
 /* Write out the SC records for a unit.  Create an SC

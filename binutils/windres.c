@@ -1,6 +1,6 @@
 /* windres.c -- a program to manipulate Windows resources
-   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007
-   Free Software Foundation, Inc.
+   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2007, 2008,
+   2009 Free Software Foundation, Inc.
    Written by Ian Lance Taylor, Cygnus Support.
    Rewritten by Kai Tietz, Onevision.
 
@@ -157,7 +157,7 @@ res_init (void)
 void *
 res_alloc (rc_uint_type bytes)
 {
-  return (void *) obstack_alloc (&res_obstack, (size_t) bytes);
+  return obstack_alloc (&res_obstack, (size_t) bytes);
 }
 
 /* We also use an obstack to save memory used while writing out a set
@@ -178,7 +178,7 @@ reswr_init (void)
 void *
 reswr_alloc (rc_uint_type bytes)
 {
-  return (void *) obstack_alloc (&reswr_obstack, (size_t) bytes);
+  return obstack_alloc (&reswr_obstack, (size_t) bytes);
 }
 
 /* Open a file using the include directory search list.  */
@@ -765,6 +765,12 @@ windres_add_include_dir (const char *p)
 {
   struct include_dir *n, **pp;
 
+  /* Computing paths is often complicated and error prone.
+     The easiest way to check for mistakes is at the time
+     we add them to include_dirs.  */
+  assert (p != NULL);
+  assert (*p != '\0');
+
   n = xmalloc (sizeof *n);
   n->next = NULL;
   n->dir = (char * ) p;
@@ -1056,7 +1062,27 @@ main (int argc, char **argv)
   return 0;
 }
 
-static void set_endianess (bfd *abfd, const char *target)
+static int
+find_arch_match(const char *tname,const char **arch)
+{
+  while (*arch != NULL)
+    {
+      const char *in_a = strstr (*arch, tname);
+      char end_ch = (in_a ? in_a[strlen(tname)] : 0);
+
+      if (in_a && (in_a == *arch || in_a[-1] == ':')
+	  && end_ch == 0)
+        {
+	  def_target_arch = *arch;
+	  return 1;
+        }
+      arch++;
+    }
+  return 0;
+}
+
+static void
+set_endianess (bfd *abfd, const char *target)
 {
   const bfd_target *target_vec;
 
@@ -1065,26 +1091,39 @@ static void set_endianess (bfd *abfd, const char *target)
   if (! target_vec)
     fatal ("Can't detect target endianess and architecture.");
   target_is_bigendian = ((target_vec->byteorder == BFD_ENDIAN_BIG) ? 1 : 0);
+
   {
-    const char *tname = target_vec->name;
-    const char **arch = bfd_arch_list();
-    if (arch && tname)
+    const char *  tname = target_vec->name;
+    const char ** arches = bfd_arch_list();
+
+    if (arches && tname)
       {
-	if (strchr (tname, '-') != NULL)
-	  tname = strchr (tname, '-') + 1;
-	while (*arch != NULL)
+	char *hyp = strchr (tname, '-');
+
+	if (hyp != NULL)
 	  {
-	    const char *in_a = strstr (*arch, tname);
-	    char end_ch = (in_a ? in_a[strlen(tname)] : 0);
-	    if (in_a && (in_a == *arch || in_a[-1] == ':')
-	        && end_ch == 0)
+	    tname = ++hyp;
+
+	    /* Make sure we dectect architecture names
+	       for triplets like "pe-arm-wince-little".  */
+	    if (!find_arch_match (tname, arches))
 	      {
-		def_target_arch = *arch;
-		break;
+		char *new_tname = (char *) alloca (strlen (hyp) + 1);
+		strcpy (new_tname, hyp);
+		while ((hyp = strrchr (new_tname, '-')) != NULL)
+		  {
+		    *hyp = 0;
+		    if (find_arch_match (new_tname, arches))
+		      break;
+		  }
 	      }
-	    arch++;
 	  }
+	else
+	  find_arch_match (tname, arches);
       }
+
+    free (arches);
+
     if (! def_target_arch)
       fatal ("Can't detect architecture.");
   }
@@ -1150,8 +1189,8 @@ set_windres_bfd (windres_bfd *wrbfd, bfd *abfd, asection *sec, rc_uint_type kind
 }
 
 void
-set_windres_bfd_content(windres_bfd *wrbfd, const void *data, rc_uint_type off,
-			rc_uint_type length)
+set_windres_bfd_content (windres_bfd *wrbfd, const void *data, rc_uint_type off,
+			 rc_uint_type length)
 {
   if (WR_KIND(wrbfd) != WR_KIND_TARGET)
     {
@@ -1163,8 +1202,8 @@ set_windres_bfd_content(windres_bfd *wrbfd, const void *data, rc_uint_type off,
 }
 
 void
-get_windres_bfd_content(windres_bfd *wrbfd, void *data, rc_uint_type off,
-			rc_uint_type length)
+get_windres_bfd_content (windres_bfd *wrbfd, void *data, rc_uint_type off,
+			 rc_uint_type length)
 {
   if (WR_KIND(wrbfd) != WR_KIND_TARGET)
     {

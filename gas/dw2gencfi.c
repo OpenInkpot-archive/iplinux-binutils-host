@@ -1,5 +1,6 @@
 /* dw2gencfi.c - Support for generating Dwarf2 CFI information.
-   Copyright 2003, 2004, 2005, 2006, 2007 Free Software Foundation, Inc.
+   Copyright 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   Free Software Foundation, Inc.
    Contributed by Michal Ludvig <mludvig@suse.cz>
 
    This file is part of GAS, the GNU Assembler.
@@ -22,7 +23,18 @@
 #include "as.h"
 #include "dw2gencfi.h"
 #include "subsegs.h"
+#include "dwarf2dbg.h"
 
+#ifdef TARGET_USE_CFIPOP
+
+/* By default, use difference expressions if DIFF_EXPR_OK is defined.  */
+#ifndef CFI_DIFF_EXPR_OK
+# ifdef DIFF_EXPR_OK
+#  define CFI_DIFF_EXPR_OK 1
+# else
+#  define CFI_DIFF_EXPR_OK 0
+# endif
+#endif
 
 /* We re-use DWARF2_LINE_MIN_INSN_LENGTH for the code alignment field
    of the CIE.  Default to 1 if not otherwise specified.  */
@@ -30,16 +42,14 @@
 # define DWARF2_LINE_MIN_INSN_LENGTH 1
 #endif
 
-/* If TARGET_USE_CFIPOP is defined, it is required that the target
-   provide the following definitions.  Otherwise provide them to 
-   allow compilation to continue.  */
-#ifndef TARGET_USE_CFIPOP
-# ifndef  DWARF2_DEFAULT_RETURN_COLUMN
-#  define DWARF2_DEFAULT_RETURN_COLUMN 0
-# endif
-# ifndef  DWARF2_CIE_DATA_ALIGNMENT
-#  define DWARF2_CIE_DATA_ALIGNMENT 1
-# endif
+/* By default, use 32-bit relocations from .eh_frame into .text.  */
+#ifndef DWARF2_FDE_RELOC_SIZE
+# define DWARF2_FDE_RELOC_SIZE 4
+#endif
+
+/* By default, use a read-only .eh_frame section.  */
+#ifndef DWARF2_EH_FRAME_READ_ONLY
+# define DWARF2_EH_FRAME_READ_ONLY SEC_READONLY
 #endif
 
 #ifndef EH_FRAME_ALIGNMENT
@@ -50,6 +60,18 @@
 # define tc_cfi_frame_initial_instructions() ((void)0)
 #endif
 
+#ifndef DWARF2_FORMAT
+# define DWARF2_FORMAT(SEC) dwarf2_format_32bit
+#endif
+
+#ifndef DWARF2_ADDR_SIZE
+# define DWARF2_ADDR_SIZE(bfd) (bfd_arch_bits_per_address (bfd) / 8)
+#endif
+
+struct cfi_escape_data {
+  struct cfi_escape_data *next;
+  expressionS exp;
+};
 
 struct cfi_insn_data
 {
@@ -74,10 +96,12 @@ struct cfi_insn_data
       symbolS *lab2;
     } ll;
 
-    struct cfi_escape_data {
-      struct cfi_escape_data *next;
+    struct cfi_escape_data *esc;
+
+    struct {
+      unsigned reg, encoding;
       expressionS exp;
-    } *esc;
+    } ea;
   } u;
 };
 
@@ -137,9 +161,11 @@ struct frch_cfi_data
 static struct fde_entry *
 alloc_fde_entry (void)
 {
-  struct fde_entry *fde = xcalloc (1, sizeof (struct fde_entry));
+  struct fde_entry *fde = (struct fde_entry *)
+      xcalloc (1, sizeof (struct fde_entry));
 
-  frchain_now->frch_cfi_data = xcalloc (1, sizeof (struct frch_cfi_data));
+  frchain_now->frch_cfi_data = (struct frch_cfi_data *)
+      xcalloc (1, sizeof (struct frch_cfi_data));
   frchain_now->frch_cfi_data->cur_fde_data = fde;
   *last_fde_data = fde;
   last_fde_data = &fde->next;
@@ -161,7 +187,8 @@ alloc_fde_entry (void)
 static struct cfi_insn_data *
 alloc_cfi_insn_data (void)
 {
-  struct cfi_insn_data *insn = xcalloc (1, sizeof (struct cfi_insn_data));
+  struct cfi_insn_data *insn = (struct cfi_insn_data *)
+      xcalloc (1, sizeof (struct cfi_insn_data));
   struct fde_entry *cur_fde_data = frchain_now->frch_cfi_data->cur_fde_data;
 
   *cur_fde_data->last = insn;
@@ -267,7 +294,7 @@ cfi_add_CFA_offset (unsigned regno, offsetT offset)
 {
   unsigned int abs_data_align;
 
-  assert (DWARF2_CIE_DATA_ALIGNMENT != 0);
+  gas_assert (DWARF2_CIE_DATA_ALIGNMENT != 0);
   cfi_add_CFA_insn_reg_offset (DW_CFA_offset, regno, offset);
 
   abs_data_align = (DWARF2_CIE_DATA_ALIGNMENT < 0
@@ -335,7 +362,7 @@ cfi_add_CFA_remember_state (void)
 
   cfi_add_CFA_insn (DW_CFA_remember_state);
 
-  p = xmalloc (sizeof (*p));
+  p = (struct cfa_save_data *) xmalloc (sizeof (*p));
   p->cfa_offset = frchain_now->frch_cfi_data->cur_cfa_offset;
   p->next = frchain_now->frch_cfi_data->cfa_save_stack;
   frchain_now->frch_cfi_data->cfa_save_stack = p;
@@ -364,10 +391,12 @@ cfi_add_CFA_restore_state (void)
 
 static void dot_cfi (int);
 static void dot_cfi_escape (int);
+static void dot_cfi_sections (int);
 static void dot_cfi_startproc (int);
 static void dot_cfi_endproc (int);
 static void dot_cfi_personality (int);
 static void dot_cfi_lsda (int);
+static void dot_cfi_val_encoded_addr (int);
 
 /* Fake CFI type; outside the byte range of any real CFI insn.  */
 #define CFI_adjust_cfa_offset	0x100
@@ -375,9 +404,11 @@ static void dot_cfi_lsda (int);
 #define CFI_rel_offset		0x102
 #define CFI_escape		0x103
 #define CFI_signal_frame	0x104
+#define CFI_val_encoded_addr	0x105
 
 const pseudo_typeS cfi_pseudo_table[] =
   {
+    { "cfi_sections", dot_cfi_sections, 0 },
     { "cfi_startproc", dot_cfi_startproc, 0 },
     { "cfi_endproc", dot_cfi_endproc, 0 },
     { "cfi_def_cfa", dot_cfi, DW_CFA_def_cfa },
@@ -398,6 +429,7 @@ const pseudo_typeS cfi_pseudo_table[] =
     { "cfi_signal_frame", dot_cfi, CFI_signal_frame },
     { "cfi_personality", dot_cfi_personality, 0 },
     { "cfi_lsda", dot_cfi_lsda, 0 },
+    { "cfi_val_encoded_addr", dot_cfi_val_encoded_addr, 0 },
     { NULL, NULL, 0 }
   };
 
@@ -411,13 +443,11 @@ cfi_parse_separator (void)
     as_bad (_("missing separator"));
 }
 
-static unsigned
-cfi_parse_reg (void)
+#ifndef tc_parse_to_dw2regnum
+static void
+tc_parse_to_dw2regnum(expressionS *exp)
 {
-  int regno;
-  expressionS exp;
-
-#ifdef tc_regname_to_dw2regnum
+# ifdef tc_regname_to_dw2regnum
   SKIP_WHITESPACE ();
   if (is_name_beginner (*input_line_pointer)
       || (*input_line_pointer == '%'
@@ -428,18 +458,24 @@ cfi_parse_reg (void)
       name = input_line_pointer;
       c = get_symbol_end ();
 
-      if ((regno = tc_regname_to_dw2regnum (name)) < 0)
-	{
-	  as_bad (_("bad register expression"));
-	  regno = 0;
-	}
+      exp->X_op = O_constant;
+      exp->X_add_number = tc_regname_to_dw2regnum (name);
 
       *input_line_pointer = c;
-      return regno;
     }
+  else
+# endif
+    expression_and_evaluate (exp);
+}
 #endif
 
-  expression_and_evaluate (&exp);
+static unsigned
+cfi_parse_reg (void)
+{
+  int regno;
+  expressionS exp;
+
+  tc_parse_to_dw2regnum (&exp);
   switch (exp.X_op)
     {
     case O_register:
@@ -448,9 +484,14 @@ cfi_parse_reg (void)
       break;
 
     default:
+      regno = -1;
+      break;
+    }
+
+  if (regno < 0)
+    {
       as_bad (_("bad register expression"));
       regno = 0;
-      break;
     }
 
   return regno;
@@ -607,7 +648,7 @@ dot_cfi_escape (int ignored ATTRIBUTE_UNUSED)
   tail = &head;
   do
     {
-      e = xmalloc (sizeof (*e));
+      e = (struct cfi_escape_data *) xmalloc (sizeof (*e));
       do_parse_cons_expression (&e->exp, 1);
       *tail = e;
       tail = &e->next;
@@ -637,7 +678,7 @@ dot_cfi_personality (int ignored ATTRIBUTE_UNUSED)
     }
 
   fde = frchain_now->frch_cfi_data->cur_fde_data;
-  encoding = get_absolute_expression ();
+  encoding = cfi_parse_const ();
   if (encoding == DW_EH_PE_omit)
     {
       demand_empty_rest_of_line ();
@@ -647,7 +688,7 @@ dot_cfi_personality (int ignored ATTRIBUTE_UNUSED)
 
   if ((encoding & 0xff) != encoding
       || ((encoding & 0x70) != 0
-#if defined DIFF_EXPR_OK || defined tc_cfi_emit_pcrel_expr
+#if CFI_DIFF_EXPR_OK || defined tc_cfi_emit_pcrel_expr
 	  && (encoding & 0x70) != DW_EH_PE_pcrel
 #endif
 	  )
@@ -707,7 +748,7 @@ dot_cfi_lsda (int ignored ATTRIBUTE_UNUSED)
     }
 
   fde = frchain_now->frch_cfi_data->cur_fde_data;
-  encoding = get_absolute_expression ();
+  encoding = cfi_parse_const ();
   if (encoding == DW_EH_PE_omit)
     {
       demand_empty_rest_of_line ();
@@ -717,7 +758,7 @@ dot_cfi_lsda (int ignored ATTRIBUTE_UNUSED)
 
   if ((encoding & 0xff) != encoding
       || ((encoding & 0x70) != 0
-#if defined DIFF_EXPR_OK || defined tc_cfi_emit_pcrel_expr
+#if CFI_DIFF_EXPR_OK || defined tc_cfi_emit_pcrel_expr
 	  && (encoding & 0x70) != DW_EH_PE_pcrel
 #endif
 	  )
@@ -763,6 +804,121 @@ dot_cfi_lsda (int ignored ATTRIBUTE_UNUSED)
     }
 
   demand_empty_rest_of_line ();
+}
+
+static void
+dot_cfi_val_encoded_addr (int ignored ATTRIBUTE_UNUSED)
+{
+  struct cfi_insn_data *insn_ptr;
+  offsetT encoding;
+
+  if (frchain_now->frch_cfi_data == NULL)
+    {
+      as_bad (_("CFI instruction used without previous .cfi_startproc"));
+      ignore_rest_of_line ();
+      return;
+    }
+
+  /* If the last address was not at the current PC, advance to current.  */
+  if (symbol_get_frag (frchain_now->frch_cfi_data->last_address) != frag_now
+      || S_GET_VALUE (frchain_now->frch_cfi_data->last_address)
+	 != frag_now_fix ())
+    cfi_add_advance_loc (symbol_temp_new_now ());
+
+  insn_ptr = alloc_cfi_insn_data ();
+  insn_ptr->insn = CFI_val_encoded_addr;
+  
+  insn_ptr->u.ea.reg = cfi_parse_reg ();
+
+  cfi_parse_separator ();
+  encoding = cfi_parse_const ();
+  if ((encoding & 0xff) != encoding
+      || ((encoding & 0x70) != 0
+#if CFI_DIFF_EXPR_OK || defined tc_cfi_emit_pcrel_expr
+	  && (encoding & 0x70) != DW_EH_PE_pcrel
+#endif
+	  )
+	 /* leb128 can be handled, but does something actually need it?  */
+      || (encoding & 7) == DW_EH_PE_uleb128
+      || (encoding & 7) > DW_EH_PE_udata8)
+    {
+      as_bad (_("invalid or unsupported encoding in .cfi_lsda"));
+      encoding = DW_EH_PE_omit;
+    }
+
+  cfi_parse_separator ();
+  expression_and_evaluate (&insn_ptr->u.ea.exp);
+  switch (insn_ptr->u.ea.exp.X_op)
+    {
+    case O_symbol:
+      break;
+    case O_constant:
+      if ((encoding & 0x70) != DW_EH_PE_pcrel)
+        break;
+    default:
+      encoding = DW_EH_PE_omit;
+      break;
+    }
+
+  insn_ptr->u.ea.encoding = encoding;
+  if (encoding == DW_EH_PE_omit)
+    {
+      as_bad (_("wrong third argument to .cfi_val_encoded_addr"));
+      ignore_rest_of_line ();
+      return;
+    }
+
+  demand_empty_rest_of_line ();
+}
+
+/* By default emit .eh_frame only, not .debug_frame.  */
+#define CFI_EMIT_eh_frame	(1 << 0)
+#define CFI_EMIT_debug_frame	(1 << 1)
+static int cfi_sections = CFI_EMIT_eh_frame;
+
+static void
+dot_cfi_sections (int ignored ATTRIBUTE_UNUSED)
+{
+  int sections = 0;
+
+  SKIP_WHITESPACE ();
+  if (is_name_beginner (*input_line_pointer))
+    while (1)
+      {
+	char *name, c;
+
+	name = input_line_pointer;
+	c = get_symbol_end ();
+
+	if (strcmp (name, ".eh_frame") == 0)
+	  sections |= CFI_EMIT_eh_frame;
+	else if (strcmp (name, ".debug_frame") == 0)
+	  sections |= CFI_EMIT_debug_frame;
+	else
+	  {
+	    *input_line_pointer = c;
+	    input_line_pointer = name;
+	    break;
+	  }
+
+	*input_line_pointer = c;
+	SKIP_WHITESPACE ();
+	if (*input_line_pointer == ',')
+	  {
+	    name = input_line_pointer++;
+	    SKIP_WHITESPACE ();
+	    if (!is_name_beginner (*input_line_pointer))
+	      {
+		input_line_pointer = name;
+		break;
+	      }
+	  }
+	else if (is_name_beginner (*input_line_pointer))
+	  break;
+      }
+
+  demand_empty_rest_of_line ();
+  cfi_sections = sections;
 }
 
 static void
@@ -878,20 +1034,20 @@ output_cfi_insn (struct cfi_insn_data *insn)
 
 	    if (scaled <= 0x3F)
 	      out_one (DW_CFA_advance_loc + scaled);
-	    else if (delta <= 0xFF)
+	    else if (scaled <= 0xFF)
 	      {
 		out_one (DW_CFA_advance_loc1);
-		out_one (delta);
+		out_one (scaled);
 	      }
-	    else if (delta <= 0xFFFF)
+	    else if (scaled <= 0xFFFF)
 	      {
 		out_one (DW_CFA_advance_loc2);
-		out_two (delta);
+		out_two (scaled);
 	      }
 	    else
 	      {
 		out_one (DW_CFA_advance_loc4);
-		out_four (delta);
+		out_four (scaled);
 	      }
 	  }
 	else
@@ -907,7 +1063,7 @@ output_cfi_insn (struct cfi_insn_data *insn)
 	       is already allocated to the frag.  This comes from the way
 	       that it scans the .eh_frame section looking first for the
 	       .byte DW_CFA_advance_loc4.  */
-	    frag_more (1);
+	    *frag_more (1) = DW_CFA_advance_loc4;
 
 	    frag_var (rs_cfa, 4, 0, DWARF2_LINE_MIN_INSN_LENGTH << 3,
 		      make_expr_symbol (&exp), frag_now_fix () - 1,
@@ -1011,6 +1167,64 @@ output_cfi_insn (struct cfi_insn_data *insn)
 	break;
       }
 
+    case CFI_val_encoded_addr:
+      {
+        unsigned encoding = insn->u.ea.encoding;
+        offsetT encoding_size;
+
+	if (encoding == DW_EH_PE_omit)
+	  break;
+	out_one (DW_CFA_val_expression);
+	out_uleb128 (insn->u.ea.reg);
+
+        switch (encoding & 0x7)
+	  {
+	  case DW_EH_PE_absptr:
+	    encoding_size = DWARF2_ADDR_SIZE (stdoutput);
+	    break;
+	  case DW_EH_PE_udata2:
+	    encoding_size = 2;
+	    break;
+	  case DW_EH_PE_udata4:
+	    encoding_size = 4;
+	    break;
+	  case DW_EH_PE_udata8:
+	    encoding_size = 8;
+	    break;
+	  default:
+	    abort ();
+	  }
+
+	/* If the user has requested absolute encoding,
+	   then use the smaller DW_OP_addr encoding.  */
+	if (insn->u.ea.encoding == DW_EH_PE_absptr)
+	  {
+	    out_uleb128 (1 + encoding_size);
+	    out_one (DW_OP_addr);
+	  }
+	else
+	  {
+	    out_uleb128 (1 + 1 + encoding_size);
+	    out_one (DW_OP_GNU_encoded_addr);
+	    out_one (encoding);
+
+	    if ((encoding & 0x70) == DW_EH_PE_pcrel)
+	      {
+#if CFI_DIFF_EXPR_OK
+		insn->u.ea.exp.X_op = O_subtract;
+		insn->u.ea.exp.X_op_symbol = symbol_temp_new_now ();
+#elif defined (tc_cfi_emit_pcrel_expr)
+		tc_cfi_emit_pcrel_expr (&insn->u.ea.exp, encoding_size);
+		break;
+#else
+		abort ();
+#endif
+	      }
+	  }
+	emit_expr (&insn->u.ea.exp, encoding_size);
+      }
+      break;
+      
     default:
       abort ();
     }
@@ -1037,12 +1251,14 @@ encoding_size (unsigned char encoding)
 }
 
 static void
-output_cie (struct cie_entry *cie)
+output_cie (struct cie_entry *cie, bfd_boolean eh_frame, int align)
 {
   symbolS *after_size_address, *end_address;
   expressionS exp;
   struct cfi_insn_data *i;
   offsetT augmentation_size;
+  int enc;
+  enum dwarf2_format fmt = DWARF2_FORMAT (now_seg);
 
   cie->start_address = symbol_temp_new_now ();
   after_size_address = symbol_temp_make ();
@@ -1053,18 +1269,35 @@ output_cie (struct cie_entry *cie)
   exp.X_op_symbol = after_size_address;
   exp.X_add_number = 0;
 
-  emit_expr (&exp, 4);				/* Length.  */
+  if (eh_frame || fmt == dwarf2_format_32bit)
+    emit_expr (&exp, 4);			/* Length.  */
+  else
+    {
+      if (fmt == dwarf2_format_64bit)
+	out_four (-1);
+      emit_expr (&exp, 8);			/* Length.  */
+    }
   symbol_set_value_now (after_size_address);
-  out_four (0);					/* CIE id.  */
+  if (eh_frame)
+    out_four (0);				/* CIE id.  */
+  else
+    {
+      out_four (-1);				/* CIE id.  */
+      if (fmt != dwarf2_format_32bit)
+	out_four (-1);
+    }
   out_one (DW_CIE_VERSION);			/* Version.  */
-  out_one ('z');				/* Augmentation.  */
-  if (cie->per_encoding != DW_EH_PE_omit)
-    out_one ('P');
-  if (cie->lsda_encoding != DW_EH_PE_omit)
-    out_one ('L');
-  out_one ('R');
-  if (cie->signal_frame)
-    out_one ('S');
+  if (eh_frame)
+    {
+      out_one ('z');				/* Augmentation.  */
+      if (cie->per_encoding != DW_EH_PE_omit)
+	out_one ('P');
+      if (cie->lsda_encoding != DW_EH_PE_omit)
+	out_one ('L');
+      out_one ('R');
+      if (cie->signal_frame)
+	out_one ('S');
+    }
   out_one (0);
   out_uleb128 (DWARF2_LINE_MIN_INSN_LENGTH);	/* Code alignment.  */
   out_sleb128 (DWARF2_CIE_DATA_ALIGNMENT);	/* Data alignment.  */
@@ -1072,10 +1305,13 @@ output_cie (struct cie_entry *cie)
     out_one (cie->return_column);
   else
     out_uleb128 (cie->return_column);
-  augmentation_size = 1 + (cie->lsda_encoding != DW_EH_PE_omit);
-  if (cie->per_encoding != DW_EH_PE_omit)
-    augmentation_size += 1 + encoding_size (cie->per_encoding);
-  out_uleb128 (augmentation_size);		/* Augmentation size.  */
+  if (eh_frame)
+    {
+      augmentation_size = 1 + (cie->lsda_encoding != DW_EH_PE_omit);
+      if (cie->per_encoding != DW_EH_PE_omit)
+	augmentation_size += 1 + encoding_size (cie->per_encoding);
+      out_uleb128 (augmentation_size);		/* Augmentation size.  */
+    }
   if (cie->per_encoding != DW_EH_PE_omit)
     {
       offsetT size = encoding_size (cie->per_encoding);
@@ -1083,7 +1319,7 @@ output_cie (struct cie_entry *cie)
       exp = cie->personality;
       if ((cie->per_encoding & 0x70) == DW_EH_PE_pcrel)
 	{
-#ifdef DIFF_EXPR_OK
+#if CFI_DIFF_EXPR_OK
 	  exp.X_op = O_subtract;
 	  exp.X_op_symbol = symbol_temp_new_now ();
 	  emit_expr (&exp, size);
@@ -1098,27 +1334,46 @@ output_cie (struct cie_entry *cie)
     }
   if (cie->lsda_encoding != DW_EH_PE_omit)
     out_one (cie->lsda_encoding);
-#if defined DIFF_EXPR_OK || defined tc_cfi_emit_pcrel_expr
-  out_one (DW_EH_PE_pcrel | DW_EH_PE_sdata4);
-#else
-  out_one (DW_EH_PE_sdata4);
+
+  switch (DWARF2_FDE_RELOC_SIZE)
+    {
+    case 2:
+      enc = DW_EH_PE_sdata2;
+      break;
+    case 4:
+      enc = DW_EH_PE_sdata4;
+      break;
+    case 8:
+      enc = DW_EH_PE_sdata8;
+      break;
+    default:
+      abort ();
+    }
+#if CFI_DIFF_EXPR_OK || defined tc_cfi_emit_pcrel_expr
+  enc |= DW_EH_PE_pcrel;
 #endif
+  if (eh_frame)
+    out_one (enc);
 
   if (cie->first)
     for (i = cie->first; i != cie->last; i = i->next)
       output_cfi_insn (i);
 
-  frag_align (2, DW_CFA_nop, 0);
+  frag_align (align, DW_CFA_nop, 0);
   symbol_set_value_now (end_address);
 }
 
 static void
 output_fde (struct fde_entry *fde, struct cie_entry *cie,
-	    struct cfi_insn_data *first, int align)
+	    bfd_boolean eh_frame, struct cfi_insn_data *first,
+	    int align)
 {
   symbolS *after_size_address, *end_address;
   expressionS exp;
   offsetT augmentation_size;
+  enum dwarf2_format fmt = DWARF2_FORMAT (now_seg);
+  int offset_size;
+  int addr_size;
 
   after_size_address = symbol_temp_make ();
   end_address = symbol_temp_make ();
@@ -1127,42 +1382,70 @@ output_fde (struct fde_entry *fde, struct cie_entry *cie,
   exp.X_add_symbol = end_address;
   exp.X_op_symbol = after_size_address;
   exp.X_add_number = 0;
-  emit_expr (&exp, 4);				/* Length.  */
+  if (eh_frame || fmt == dwarf2_format_32bit)
+    offset_size = 4;
+  else
+    {
+      if (fmt == dwarf2_format_64bit)
+	out_four (-1);
+      offset_size = 8;
+    }
+  emit_expr (&exp, offset_size);		/* Length.  */
   symbol_set_value_now (after_size_address);
 
-  exp.X_add_symbol = after_size_address;
-  exp.X_op_symbol = cie->start_address;
-  emit_expr (&exp, 4);				/* CIE offset.  */
+  if (eh_frame)
+    {
+      exp.X_add_symbol = after_size_address;
+      exp.X_op_symbol = cie->start_address;
+    }
+  else
+    {
+      exp.X_op = O_symbol;
+      exp.X_add_symbol = cie->start_address;
+      exp.X_op_symbol = NULL;
+    }
+  emit_expr (&exp, offset_size);		/* CIE offset.  */
 
-#ifdef DIFF_EXPR_OK
-  exp.X_add_symbol = fde->start_address;
-  exp.X_op_symbol = symbol_temp_new_now ();
-  emit_expr (&exp, 4);				/* Code offset.  */
+  if (eh_frame)
+    {
+#if CFI_DIFF_EXPR_OK
+      exp.X_add_symbol = fde->start_address;
+      exp.X_op_symbol = symbol_temp_new_now ();
+      emit_expr (&exp, DWARF2_FDE_RELOC_SIZE);	/* Code offset.  */
 #else
-  exp.X_op = O_symbol;
-  exp.X_add_symbol = fde->start_address;
-  exp.X_op_symbol = NULL;
+      exp.X_op = O_symbol;
+      exp.X_add_symbol = fde->start_address;
+      exp.X_op_symbol = NULL;
 #ifdef tc_cfi_emit_pcrel_expr
-  tc_cfi_emit_pcrel_expr (&exp, 4);		/* Code offset.  */
+      tc_cfi_emit_pcrel_expr (&exp, DWARF2_FDE_RELOC_SIZE);	 /* Code offset.  */
 #else
-  emit_expr (&exp, 4);				/* Code offset.  */
+      emit_expr (&exp, DWARF2_FDE_RELOC_SIZE);	/* Code offset.  */
 #endif
-  exp.X_op = O_subtract;
 #endif
+      addr_size = DWARF2_FDE_RELOC_SIZE;
+    }
+  else
+    {
+      exp.X_add_symbol = fde->start_address;
+      addr_size = DWARF2_ADDR_SIZE (stdoutput);
+      emit_expr (&exp, addr_size);
+    }
 
+  exp.X_op = O_subtract;
   exp.X_add_symbol = fde->end_address;
   exp.X_op_symbol = fde->start_address;		/* Code length.  */
-  emit_expr (&exp, 4);
+  emit_expr (&exp, addr_size);
 
   augmentation_size = encoding_size (fde->lsda_encoding);
-  out_uleb128 (augmentation_size);		/* Augmentation size.  */
+  if (eh_frame)
+    out_uleb128 (augmentation_size);		/* Augmentation size.  */
 
   if (fde->lsda_encoding != DW_EH_PE_omit)
     {
       exp = fde->lsda;
       if ((fde->lsda_encoding & 0x70) == DW_EH_PE_pcrel)
 	{
-#ifdef DIFF_EXPR_OK
+#if CFI_DIFF_EXPR_OK
 	  exp.X_op = O_subtract;
 	  exp.X_op_symbol = symbol_temp_new_now ();
 	  emit_expr (&exp, augmentation_size);
@@ -1184,7 +1467,8 @@ output_fde (struct fde_entry *fde, struct cie_entry *cie,
 }
 
 static struct cie_entry *
-select_cie_for_fde (struct fde_entry *fde, struct cfi_insn_data **pfirst)
+select_cie_for_fde (struct fde_entry *fde, bfd_boolean eh_frame,
+		    struct cfi_insn_data **pfirst, int align)
 {
   struct cfi_insn_data *i, *j;
   struct cie_entry *cie;
@@ -1260,6 +1544,7 @@ select_cie_for_fde (struct fde_entry *fde, struct cfi_insn_data **pfirst)
 	      break;
 
 	    case CFI_escape:
+	    case CFI_val_encoded_addr:
 	      /* Don't bother matching these for now.  */
 	      goto fail;
 
@@ -1275,7 +1560,8 @@ select_cie_for_fde (struct fde_entry *fde, struct cfi_insn_data **pfirst)
 	  && (!j
 	      || j->insn == DW_CFA_advance_loc
 	      || j->insn == DW_CFA_remember_state
-	      || j->insn == CFI_escape))
+	      || j->insn == CFI_escape
+	      || j->insn == CFI_val_encoded_addr))
 	{
 	  *pfirst = j;
 	  return cie;
@@ -1284,7 +1570,7 @@ select_cie_for_fde (struct fde_entry *fde, struct cfi_insn_data **pfirst)
     fail:;
     }
 
-  cie = xmalloc (sizeof (struct cie_entry));
+  cie = (struct cie_entry *) xmalloc (sizeof (struct cie_entry));
   cie->next = cie_root;
   cie_root = cie;
   cie->return_column = fde->return_column;
@@ -1297,16 +1583,61 @@ select_cie_for_fde (struct fde_entry *fde, struct cfi_insn_data **pfirst)
   for (i = cie->first; i ; i = i->next)
     if (i->insn == DW_CFA_advance_loc
 	|| i->insn == DW_CFA_remember_state
-	|| i->insn == CFI_escape)
+	|| i->insn == CFI_escape
+	|| i->insn == CFI_val_encoded_addr)
       break;
 
   cie->last = i;
   *pfirst = i;
-   
-  output_cie (cie);
+
+  output_cie (cie, eh_frame, align);
 
   return cie;
 }
+
+#ifdef md_reg_eh_frame_to_debug_frame
+static void
+cfi_change_reg_numbers (struct cfi_insn_data *insn)
+{
+  for (; insn; insn = insn->next)
+    switch (insn->insn)
+      {
+      case DW_CFA_advance_loc:
+      case DW_CFA_def_cfa_offset:
+      case DW_CFA_remember_state:
+      case DW_CFA_restore_state:
+      case DW_CFA_GNU_window_save:
+      case CFI_escape:
+	break;
+
+      case DW_CFA_def_cfa:
+      case DW_CFA_offset:
+	insn->u.ri.reg = md_reg_eh_frame_to_debug_frame (insn->u.ri.reg);
+	break;
+
+      case DW_CFA_def_cfa_register:
+      case DW_CFA_undefined:
+      case DW_CFA_same_value:
+      case DW_CFA_restore:
+	insn->u.r = md_reg_eh_frame_to_debug_frame (insn->u.r);
+	break;
+
+      case DW_CFA_register:
+	insn->u.rr.reg1 = md_reg_eh_frame_to_debug_frame (insn->u.rr.reg1);
+	insn->u.rr.reg2 = md_reg_eh_frame_to_debug_frame (insn->u.rr.reg2);
+	break;
+
+      case CFI_val_encoded_addr:
+	insn->u.ea.reg = md_reg_eh_frame_to_debug_frame (insn->u.ea.reg);
+	break;
+
+      default:
+	abort ();
+      }
+}
+#else
+#define cfi_change_reg_numbers(insn) do { } while (0)
+#endif
 
 void
 cfi_finish (void)
@@ -1318,31 +1649,85 @@ cfi_finish (void)
   if (all_fde_data == 0)
     return;
 
-  /* Open .eh_frame section.  */
-  cfi_seg = subseg_new (".eh_frame", 0);
-  bfd_set_section_flags (stdoutput, cfi_seg,
-			 SEC_ALLOC | SEC_LOAD | SEC_DATA | SEC_READONLY);
-  subseg_set (cfi_seg, 0);
-  record_alignment (cfi_seg, EH_FRAME_ALIGNMENT);
-
-  /* Make sure check_eh_frame doesn't do anything with our output.  */
-  save_flag_traditional_format = flag_traditional_format;
-  flag_traditional_format = 1;
-
-  for (fde = all_fde_data; fde ; fde = fde->next)
+  if ((cfi_sections & CFI_EMIT_eh_frame) != 0)
     {
-      struct cfi_insn_data *first;
-      struct cie_entry *cie;
+      /* Open .eh_frame section.  */
+      cfi_seg = subseg_new (".eh_frame", 0);
+      bfd_set_section_flags (stdoutput, cfi_seg,
+			     SEC_ALLOC | SEC_LOAD | SEC_DATA
+			     | DWARF2_EH_FRAME_READ_ONLY);
+      subseg_set (cfi_seg, 0);
+      record_alignment (cfi_seg, EH_FRAME_ALIGNMENT);
 
-      if (fde->end_address == NULL)
+#ifdef md_fix_up_eh_frame
+      md_fix_up_eh_frame (cfi_seg);
+#endif
+
+      /* Make sure check_eh_frame doesn't do anything with our output.  */
+      save_flag_traditional_format = flag_traditional_format;
+      flag_traditional_format = 1;
+
+      for (fde = all_fde_data; fde ; fde = fde->next)
 	{
-	  as_bad (_("open CFI at the end of file; missing .cfi_endproc directive"));
-	  fde->end_address = fde->start_address;
+	  struct cfi_insn_data *first;
+	  struct cie_entry *cie;
+
+	  if (fde->end_address == NULL)
+	    {
+	      as_bad (_("open CFI at the end of file; missing .cfi_endproc directive"));
+	      fde->end_address = fde->start_address;
+	    }
+
+	  cie = select_cie_for_fde (fde, TRUE, &first, 2);
+	  output_fde (fde, cie, TRUE, first,
+		      fde->next == NULL ? EH_FRAME_ALIGNMENT : 2);
 	}
 
-      cie = select_cie_for_fde (fde, &first);
-      output_fde (fde, cie, first, fde->next == NULL ? EH_FRAME_ALIGNMENT : 2);
+      flag_traditional_format = save_flag_traditional_format;
     }
 
-  flag_traditional_format = save_flag_traditional_format;
+  if ((cfi_sections & CFI_EMIT_debug_frame) != 0)
+    {
+      struct cie_entry *cie, *cie_next;
+      int alignment = ffs (DWARF2_ADDR_SIZE (stdoutput)) - 1;
+
+      for (cie = cie_root; cie; cie = cie_next)
+	{
+	  cie_next = cie->next;
+	  free ((void *) cie);
+	}
+      cie_root = NULL;
+
+      /* Open .debug_frame section.  */
+      cfi_seg = subseg_new (".debug_frame", 0);
+      bfd_set_section_flags (stdoutput, cfi_seg,
+			     SEC_READONLY | SEC_DEBUGGING);
+      subseg_set (cfi_seg, 0);
+      record_alignment (cfi_seg, alignment);
+
+      for (fde = all_fde_data; fde ; fde = fde->next)
+	{
+	  struct cfi_insn_data *first;
+	  struct cie_entry *cie;
+
+	  if (fde->end_address == NULL)
+	    {
+	      as_bad (_("open CFI at the end of file; missing .cfi_endproc directive"));
+	      fde->end_address = fde->start_address;
+	    }
+
+	  fde->per_encoding = DW_EH_PE_omit;
+	  fde->lsda_encoding = DW_EH_PE_omit;
+	  cfi_change_reg_numbers (fde->data);
+	  cie = select_cie_for_fde (fde, FALSE, &first, alignment);
+	  output_fde (fde, cie, FALSE, first, alignment);
+	}
+    }
 }
+
+#else /* TARGET_USE_CFIPOP */
+void
+cfi_finish (void)
+{
+}
+#endif /* TARGET_USE_CFIPOP */

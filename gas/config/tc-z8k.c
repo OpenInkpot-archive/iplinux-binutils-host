@@ -1,6 +1,6 @@
 /* tc-z8k.c -- Assemble code for the Zilog Z800n
    Copyright 1992, 1993, 1994, 1995, 1996, 1998, 2000, 2001, 2002, 2003,
-   2005, 2006, 2007  Free Software Foundation, Inc.
+   2005, 2006, 2007, 2009  Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -342,15 +342,15 @@ static char *
 parse_exp (char *s, expressionS *op)
 {
   char *save = input_line_pointer;
-  char *new;
+  char *new_pointer;
 
   input_line_pointer = s;
   expression (op);
   if (op->X_op == O_absent)
     as_bad (_("missing operand"));
-  new = input_line_pointer;
+  new_pointer = input_line_pointer;
   input_line_pointer = save;
-  return new;
+  return new_pointer;
 }
 
 /* The many forms of operand:
@@ -1285,63 +1285,11 @@ md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
 }
 
 /* Various routines to kill one day.  */
-/* Equal to MAX_PRECISION in atof-ieee.c.  */
-#define MAX_LITTLENUMS 6
-
-/* Turn a string in input_line_pointer into a floating point constant
-   of type TYPE, and store the appropriate bytes in *LITP.  The number
-   of LITTLENUMS emitted is stored in *SIZEP.  An error message is
-   returned, or NULL on OK.  */
 
 char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  int prec;
-  LITTLENUM_TYPE words[MAX_LITTLENUMS];
-  LITTLENUM_TYPE *wordP;
-  char *t;
-
-  switch (type)
-    {
-    case 'f':
-    case 'F':
-    case 's':
-    case 'S':
-      prec = 2;
-      break;
-
-    case 'd':
-    case 'D':
-    case 'r':
-    case 'R':
-      prec = 4;
-      break;
-
-    case 'x':
-    case 'X':
-      prec = 6;
-      break;
-
-    case 'p':
-    case 'P':
-      prec = 6;
-      break;
-
-    default:
-      *sizeP = 0;
-      return _("Bad call to MD_ATOF()");
-    }
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * sizeof (LITTLENUM_TYPE);
-  for (wordP = words; prec--;)
-    {
-      md_number_to_chars (litP, (long) (*wordP++), sizeof (LITTLENUM_TYPE));
-      litP += sizeof (LITTLENUM_TYPE);
-    }
-  return 0;
+  return ieee_md_atof (type, litP, sizeP, TRUE);
 }
 
 const char *md_shortopts = "z:";
@@ -1421,7 +1369,7 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED,
   if (! reloc->howto)
     {
       as_bad_where (fixp->fx_file, fixp->fx_line,
-                    "Cannot represent %s relocation in object file",
+                    _("Cannot represent %s relocation in object file"),
                     bfd_get_reloc_code_name (fixp->fx_r_type));
       abort ();
     }

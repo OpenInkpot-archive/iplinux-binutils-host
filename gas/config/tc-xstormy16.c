@@ -1,5 +1,5 @@
 /* tc-xstormy16.c -- Assembler for the Sanyo XSTORMY16.
-   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   Copyright 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2009
    Free Software Foundation.
 
    This file is part of GAS, the GNU Assembler.
@@ -122,7 +122,7 @@ md_assemble (char * str)
 
   if (!insn.insn)
     {
-      as_bad (errmsg);
+      as_bad ("%s", errmsg);
       return;
     }
 
@@ -143,7 +143,7 @@ md_operand (expressionS * e)
       SKIP_WHITESPACE ();
       if (*input_line_pointer != '(')
 	{
-	  as_bad ("Expected '('");
+	  as_bad (_("Expected '('"));
 	  goto err;
 	}
       input_line_pointer++;
@@ -152,14 +152,14 @@ md_operand (expressionS * e)
 
       if (*input_line_pointer != ')')
 	{
-	  as_bad ("Missing ')'");
+	  as_bad (_("Missing ')'"));
 	  goto err;
 	}
       input_line_pointer++;
       SKIP_WHITESPACE ();
 
       if (e->X_op != O_symbol)
-	as_bad ("Not a symbolic expression");
+	as_bad (_("Not a symbolic expression"));
       else if (* input_line_pointer == '-')
 	/* We are computing the difference of two function pointers
 	   like this:
@@ -223,7 +223,7 @@ xstormy16_cons_fix_new (fragS *f,
  	  break;
 
  	default:
-	  as_bad ("unsupported fptr fixup size %d", nbytes);
+	  as_bad (_("unsupported fptr fixup size %d"), nbytes);
 	  return;
 	}
     }
@@ -235,7 +235,7 @@ xstormy16_cons_fix_new (fragS *f,
     code = BFD_RELOC_32;
   else
     {
-      as_bad ("unsupported fixup size %d", nbytes);
+      as_bad (_("unsupported fixup size %d"), nbytes);
       return;
     }
 
@@ -266,7 +266,7 @@ xstormy16_cgen_record_fixup_exp (fragS *              frag,
   if (op == O_fptr_symbol)
     {
       if (operand->type != XSTORMY16_OPERAND_IMM16)
-	as_bad ("unsupported fptr fixup");
+	as_bad (_("unsupported fptr fixup"));
       else
 	{
 	  fixP->fx_r_type = BFD_RELOC_XSTORMY16_FPTR16;
@@ -596,54 +596,8 @@ md_number_to_chars (char * buf, valueT val, int n)
   number_to_chars_littleendian (buf, val, n);
 }
 
-/* Turn a string in input_line_pointer into a floating point constant of type
-   type, and store the appropriate bytes in *litP.  The number of LITTLENUMS
-   emitted is stored in *sizeP .  An error message is returned, or NULL on OK.
-*/
-
-/* Equal to MAX_PRECISION in atof-ieee.c */
-#define MAX_LITTLENUMS 6
-
 char *
 md_atof (int type, char * litP, int * sizeP)
 {
-  int              prec;
-  LITTLENUM_TYPE   words [MAX_LITTLENUMS];
-  LITTLENUM_TYPE   *wordP;
-  char *           t;
-
-  switch (type)
-    {
-    case 'f':
-    case 'F':
-      prec = 2;
-      break;
-
-    case 'd':
-    case 'D':
-      prec = 4;
-      break;
-
-   /* FIXME: Some targets allow other format chars for bigger sizes here.  */
-
-    default:
-      * sizeP = 0;
-      return _("Bad call to md_atof()");
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-  * sizeP = prec * sizeof (LITTLENUM_TYPE);
-
-  *sizeP = prec * sizeof (LITTLENUM_TYPE);
-  /* This loops outputs the LITTLENUMs in REVERSE order; in accord with
-     the littleendianness of the processor.  */
-  for (wordP = words + prec - 1; prec--;)
-    {
-      md_number_to_chars (litP, (valueT) (*wordP--), sizeof (LITTLENUM_TYPE));
-      litP += sizeof (LITTLENUM_TYPE);
-    }
-
-  return 0;
+  return ieee_md_atof (type, litP, sizeP, FALSE);
 }

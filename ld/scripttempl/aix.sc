@@ -6,13 +6,13 @@
 cat <<EOF
 OUTPUT_ARCH(${ARCH})
 ${RELOCATING+${LIB_SEARCH_DIRS}}
-ENTRY(__start)
+${RELOCATING+ENTRY (__start)}
 SECTIONS
 {
   .pad 0 : { *(.pad) }
 
   . = 0x10000000;
-  .text ${RELOCATING-0} : {
+  .text  : {
     ${RELOCATING+PROVIDE (_text = .);}
     *(.text)
     *(.pr)

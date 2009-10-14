@@ -1,5 +1,5 @@
 /* MMIX-specific support for 64-bit ELF.
-   Copyright 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   Copyright 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2009
    Free Software Foundation, Inc.
    Contributed by Hans-Peter Nilsson <hp@bitrange.com>
 
@@ -159,7 +159,7 @@ struct bpo_greg_section_info
     struct bpo_reloc_request *reloc_request;
   };
 
-static bfd_boolean mmix_elf_link_output_symbol_hook
+static int mmix_elf_link_output_symbol_hook
   PARAMS ((struct bfd_link_info *, const char *, Elf_Internal_Sym *,
 	   asection *, struct elf_link_hash_entry *));
 
@@ -1978,15 +1978,12 @@ mmix_elf_check_relocs (abfd, info, sec, relocs)
      const Elf_Internal_Rela *relocs;
 {
   Elf_Internal_Shdr *symtab_hdr;
-  struct elf_link_hash_entry **sym_hashes, **sym_hashes_end;
+  struct elf_link_hash_entry **sym_hashes;
   const Elf_Internal_Rela *rel;
   const Elf_Internal_Rela *rel_end;
 
   symtab_hdr = &elf_tdata (abfd)->symtab_hdr;
   sym_hashes = elf_sym_hashes (abfd);
-  sym_hashes_end = sym_hashes + symtab_hdr->sh_size/sizeof(Elf64_External_Sym);
-  if (!elf_bad_symtab (abfd))
-    sym_hashes_end -= symtab_hdr->sh_info;
 
   /* First we sort the relocs so that any register relocs come before
      expansion-relocs to the same insn.  FIXME: Not done for mmo.  */
@@ -2029,7 +2026,9 @@ mmix_elf_check_relocs (abfd, info, sec, relocs)
         /* This relocation describes which C++ vtable entries are actually
            used.  Record for later use during GC.  */
         case R_MMIX_GNU_VTENTRY:
-          if (!bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
+          BFD_ASSERT (h != NULL);
+          if (h != NULL
+              && !bfd_elf_gc_record_vtentry (abfd, sec, h, rel->r_addend))
             return FALSE;
           break;
 	}
@@ -2083,7 +2082,7 @@ _bfd_mmix_check_all_relocs (abfd, info)
    the register section, and scale them down to correspond to the register
    number.  */
 
-static bfd_boolean
+static int
 mmix_elf_link_output_symbol_hook (info, name, sym, input_sec, h)
      struct bfd_link_info *info ATTRIBUTE_UNUSED;
      const char *name ATTRIBUTE_UNUSED;
@@ -2100,7 +2099,7 @@ mmix_elf_link_output_symbol_hook (info, name, sym, input_sec, h)
       sym->st_shndx = SHN_REGISTER;
     }
 
-  return TRUE;
+  return 1;
 }
 
 /* We fake a register section that holds values that are register numbers.
@@ -2558,7 +2557,7 @@ mmix_dump_bpo_gregs (link_info, pf)
    when the last such reloc is done, an index-array is sorted according to
    the values and iterated over to produce register numbers (indexed by 0
    from the first allocated register number) and offsets for use in real
-   relocation.
+   relocation.  (N.B.: Relocatable runs are handled, not just punted.)
 
    PUSHJ stub accounting is also done here.
 

@@ -1,6 +1,6 @@
 /* bucomm.c -- Bin Utils COMmon code.
    Copyright 1991, 1992, 1993, 1994, 1995, 1997, 1998, 2000, 2001, 2002,
-   2003, 2006, 2007
+   2003, 2005, 2006, 2007, 2008, 2009
    Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
@@ -58,6 +58,52 @@ bfd_nonfatal (const char *string)
     fprintf (stderr, "%s: %s: %s\n", program_name, string, errmsg);
   else
     fprintf (stderr, "%s: %s\n", program_name, errmsg);
+}
+
+/* Issue a non fatal error message.  FILENAME, or if NULL then BFD,
+   are used to indicate the problematic file.  SECTION, if non NULL,
+   is used to provide a section name.  If FORMAT is non-null, then it
+   is used to print additional information via vfprintf.  Finally the
+   bfd error message is printed.  In summary, error messages are of
+   one of the following forms:
+
+   PROGRAM:file: bfd-error-message
+   PROGRAM:file[section]: bfd-error-message
+   PROGRAM:file: printf-message: bfd-error-message
+   PROGRAM:file[section]: printf-message: bfd-error-message
+*/
+
+void
+bfd_nonfatal_message (const char *filename,
+		      const bfd *bfd, const asection *section,
+		      const char *format, ...)
+{
+  const char *errmsg = bfd_errmsg (bfd_get_error ());
+  const char *section_name = NULL;
+  va_list args;
+
+  va_start (args, format);
+  fprintf (stderr, "%s", program_name);
+  
+  if (bfd)
+    {
+      if (!filename)
+	filename = bfd_get_archive_filename (bfd);
+      if (section)
+	section_name = bfd_get_section_name (bfd, section);
+    }
+  if (section_name)
+    fprintf (stderr, ":%s[%s]", filename, section_name);
+  else
+    fprintf (stderr, ":%s", filename);
+
+  if (format)
+    {
+      fprintf (stderr, ": ");
+      vfprintf (stderr, format, args);
+    }
+  fprintf (stderr, ": %s\n", errmsg);
+  va_end (args);
 }
 
 void
@@ -149,16 +195,18 @@ list_supported_targets (const char *name, FILE *f)
 void
 list_supported_architectures (const char *name, FILE *f)
 {
-  const char **arch;
+  const char ** arch;
+  const char ** arches;
 
   if (name == NULL)
     fprintf (f, _("Supported architectures:"));
   else
     fprintf (f, _("%s: supported architectures:"), name);
 
-  for (arch = bfd_arch_list (); *arch; arch++)
+  for (arch = arches = bfd_arch_list (); *arch; arch++)
     fprintf (f, " %s", *arch);
   fprintf (f, "\n");
+  free (arches);
 }
 
 /* The length of the longest architecture name + 1.  */
@@ -190,7 +238,7 @@ display_target_list (void)
     {
       const bfd_target *p = bfd_target_vector[t];
       bfd *abfd = bfd_openw (dummy_name, p->name);
-      enum bfd_architecture a;
+      int a;
 
       printf ("%s\n (header %s, data %s)\n", p->name,
 	      endian_string (p->header_byteorder),
@@ -236,7 +284,7 @@ display_info_table (int first, int last)
   int t;
   int ret = 1;
   char *dummy_name;
-  enum bfd_architecture a;
+  int a;
 
   /* Print heading of target names.  */
   printf ("\n%*s", (int) LONGEST_ARCH, " ");
@@ -246,10 +294,11 @@ display_info_table (int first, int last)
 
   dummy_name = make_temp_file (NULL);
   for (a = bfd_arch_obscure + 1; a < bfd_arch_last; a++)
-    if (strcmp (bfd_printable_arch_mach (a, 0), "UNKNOWN!") != 0)
+    if (strcmp (bfd_printable_arch_mach ((enum bfd_architecture) a, 0),
+                "UNKNOWN!") != 0)
       {
 	printf ("%*s ", (int) LONGEST_ARCH - 1,
-		bfd_printable_arch_mach (a, 0));
+		bfd_printable_arch_mach ((enum bfd_architecture) a, 0));
 	for (t = first; t < last && bfd_target_vector[t]; t++)
 	  {
 	    const bfd_target *p = bfd_target_vector[t];
@@ -278,7 +327,7 @@ display_info_table (int first, int last)
 
 	    if (ok)
 	      {
-		if (! bfd_set_arch_mach (abfd, a, 0))
+		if (! bfd_set_arch_mach (abfd, (enum bfd_architecture) a, 0))
 		  ok = FALSE;
 	      }
 
@@ -413,7 +462,7 @@ template_in_dir (const char *path)
   if (slash != (char *) NULL)
     {
       len = slash - path;
-      tmpname = xmalloc (len + sizeof (template) + 2);
+      tmpname = (char *) xmalloc (len + sizeof (template) + 2);
       memcpy (tmpname, path, len);
 
 #ifdef HAVE_DOS_BASED_FILE_SYSTEM
@@ -427,7 +476,7 @@ template_in_dir (const char *path)
     }
   else
     {
-      tmpname = xmalloc (sizeof (template));
+      tmpname = (char *) xmalloc (sizeof (template));
       len = 0;
     }
 
@@ -523,13 +572,13 @@ get_file_size (const char * file_name)
   else
     return statbuf.st_size;
 
-  return 0;
+  return (off_t) -1;
 }
 
 /* Return the filename in a static buffer.  */
 
 const char *
-bfd_get_archive_filename (bfd *abfd)
+bfd_get_archive_filename (const bfd *abfd)
 {
   static size_t curr = 0;
   static char *buf;
@@ -547,7 +596,7 @@ bfd_get_archive_filename (bfd *abfd)
       if (curr)
 	free (buf);
       curr = needed + (needed >> 1);
-      buf = bfd_malloc (curr);
+      buf = (char *) bfd_malloc (curr);
       /* If we can't malloc, fail safe by returning just the file name.
 	 This function is only used when building error messages.  */
       if (!buf)

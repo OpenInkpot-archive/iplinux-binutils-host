@@ -1,6 +1,6 @@
 /* BFD back-end for ALPHA Extended-Coff files.
    Copyright 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002,
-   2003, 2004, 2005, 2007 Free Software Foundation, Inc.
+   2003, 2004, 2005, 2007, 2008, 2009 Free Software Foundation, Inc.
    Modified from coff-mips.c by Steve Chamberlain <sac@cygnus.com> and
    Ian Lance Taylor <ian@cygnus.com>.
 
@@ -2297,14 +2297,15 @@ static const struct ecoff_backend_data alpha_ecoff_backend_data =
     (unsigned (*) PARAMS ((bfd *,PTR,PTR))) bfd_void, /* reloc_out */
     alpha_ecoff_swap_filehdr_out, alpha_ecoff_swap_aouthdr_out,
     alpha_ecoff_swap_scnhdr_out,
-    FILHSZ, AOUTSZ, SCNHSZ, 0, 0, 0, 0, FILNMLEN, TRUE, FALSE, 4, FALSE, 2,
+    FILHSZ, AOUTSZ, SCNHSZ, 0, 0, 0, 0, FILNMLEN, TRUE, 
+    ECOFF_NO_LONG_SECTION_NAMES, 4, FALSE, 2,
     alpha_ecoff_swap_filehdr_in, alpha_ecoff_swap_aouthdr_in,
     alpha_ecoff_swap_scnhdr_in, NULL,
     alpha_ecoff_bad_format_hook, _bfd_ecoff_set_arch_mach_hook,
     alpha_ecoff_mkobject_hook, _bfd_ecoff_styp_to_sec_flags,
     _bfd_ecoff_set_alignment_hook, _bfd_ecoff_slurp_symbol_table,
     NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL, NULL
+    NULL, NULL, NULL, NULL
   },
   /* Supported architecture.  */
   bfd_arch_alpha,
@@ -2397,6 +2398,7 @@ static const struct ecoff_backend_data alpha_ecoff_backend_data =
 #define _bfd_ecoff_bfd_discard_group bfd_generic_discard_group
 #define _bfd_ecoff_section_already_linked \
   _bfd_generic_section_already_linked
+#define _bfd_ecoff_bfd_define_common_symbol bfd_generic_define_common_symbol
 
 const bfd_target ecoffalpha_little_vec =
 {
@@ -2421,7 +2423,7 @@ const bfd_target ecoffalpha_little_vec =
      bfd_getl16, bfd_getl_signed_16, bfd_putl16, /* hdrs */
 
   {_bfd_dummy_target, alpha_ecoff_object_p, /* bfd_check_format */
-     _bfd_ecoff_archive_p, _bfd_dummy_target},
+     bfd_generic_archive_p, _bfd_dummy_target},
   {bfd_false, _bfd_ecoff_mkobject,  /* bfd_set_format */
      _bfd_generic_mkarchive, bfd_false},
   {bfd_false, _bfd_ecoff_write_object_contents, /* bfd_write_contents */

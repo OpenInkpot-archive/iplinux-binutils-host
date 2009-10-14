@@ -1,5 +1,6 @@
+#skip: mips-*-ecoff
 #objdump: -dr --prefix-addresses --show-raw-insn
-#name: MIPS branch-misc-2-64
+#name: MIPS branch-misc-2pic-64
 #source: branch-misc-2.s
 #as: -64 -call_shared
 

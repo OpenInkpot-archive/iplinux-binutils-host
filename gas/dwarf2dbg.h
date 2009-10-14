@@ -1,5 +1,6 @@
 /* dwarf2dbg.h - DWARF2 debug support
-   Copyright 1999, 2000, 2002, 2003, 2007 Free Software Foundation, Inc.
+   Copyright 1999, 2000, 2002, 2003, 2005, 2006, 2007, 2009
+   Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -34,6 +35,7 @@ struct dwarf2_line_info {
   unsigned int column;
   unsigned int isa;
   unsigned int flags;
+  unsigned int discriminator;
 };
 
 /* Implements the .file FILENO "FILENAME" directive.  FILENO can be 0
@@ -72,13 +74,21 @@ extern void dwarf2_gen_line_info (addressT addr, struct dwarf2_line_info *l);
 /* Must be called for each generated instruction.  */
 extern void dwarf2_emit_insn (int);
 
+/* Reset the state of the line number information to reflect that
+   it has been used.  */
+extern void dwarf2_consume_line_info (void);
+
 /* Should be called for each code label.  */
 extern void dwarf2_emit_label (symbolS *);
+
+/* True when we've seen a .loc directive recently.  Used to avoid
+   doing work when there's nothing to do.  */
+extern bfd_boolean dwarf2_loc_directive_seen;
 
 /* True when we're supposed to set the basic block mark whenever a label
    is seen.  Unless the target is doing Something Weird, just call 
    dwarf2_emit_label.  */
-bfd_boolean dwarf2_loc_mark_labels;
+extern bfd_boolean dwarf2_loc_mark_labels;
 
 extern void dwarf2_finish (void);
 

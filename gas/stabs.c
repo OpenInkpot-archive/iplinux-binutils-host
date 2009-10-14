@@ -164,6 +164,8 @@ aout_process_stab (what, string, type, other, desc)
 
   symbol_append (symbol, symbol_lastP, &symbol_rootP, &symbol_lastP);
 
+  symbol_get_bfdsym (symbol)->flags |= BSF_DEBUGGING;
+
   S_SET_TYPE (symbol, type);
   S_SET_OTHER (symbol, other);
   S_SET_DESC (symbol, desc);
@@ -496,7 +498,7 @@ stabs_generate_asm_file (void)
       char *dir2;
 
       dir = remap_debug_filename (getpwd ());
-      dir2 = alloca (strlen (dir) + 2);
+      dir2 = (char *) alloca (strlen (dir) + 2);
       sprintf (dir2, "%s%s", dir, "/");
       generate_asm_file (N_SO, dir2);
     }
@@ -534,7 +536,7 @@ generate_asm_file (int type, char *file)
   /* Allocate enough space for the file name (possibly extended with
      doubled up backslashes), the symbol name, and the other characters
      that make up a stabs file directive.  */
-  bufp = buf = xmalloc (2 * strlen (file) + strlen (sym) + 12);
+  bufp = buf = (char *) xmalloc (2 * strlen (file) + strlen (sym) + 12);
 
   *bufp++ = '"';
 
@@ -667,8 +669,9 @@ stabs_generate_asm_func (const char *funcname, const char *startlabname)
     }
 
   as_where (&file, &lineno);
-  asprintf (&buf, "\"%s:F1\",%d,0,%d,%s",
-	    funcname, N_FUN, lineno + 1, startlabname);
+  if (asprintf (&buf, "\"%s:F1\",%d,0,%d,%s",
+		funcname, N_FUN, lineno + 1, startlabname) == -1)
+    as_fatal ("%s", xstrerror (errno));
   input_line_pointer = buf;
   s_stab ('s');
   free (buf);
@@ -693,7 +696,8 @@ stabs_generate_asm_endfunc (const char *funcname ATTRIBUTE_UNUSED,
   ++label_count;
   colon (sym);
 
-  asprintf (&buf, "\"\",%d,0,0,%s-%s", N_FUN, sym, startlabname);
+  if (asprintf (&buf, "\"\",%d,0,0,%s-%s", N_FUN, sym, startlabname) == -1)
+    as_fatal ("%s", xstrerror (errno));
   input_line_pointer = buf;
   s_stab ('s');
   free (buf);

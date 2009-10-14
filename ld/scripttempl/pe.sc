@@ -13,8 +13,16 @@ fi
 # use grouped sections instead).
 if test "${RELOCATING}"; then
   R_TEXT='*(SORT(.text$*))'
-  R_DATA='*(SORT(.data$*))'
-  R_RDATA='*(SORT(.rdata$*))'
+  if test "x$LD_FLAG" = "xauto_import" ; then
+    R_DATA='*(SORT(.data$*))
+            *(.rdata)
+	    *(SORT(.rdata$*))'
+    R_RDATA=''
+  else
+    R_DATA='*(SORT(.data$*))'
+    R_RDATA='*(.rdata)
+             *(SORT(.rdata$*))'
+  fi
   R_IDATA='
     SORT(*)(.idata$2)
     SORT(*)(.idata$3)
@@ -37,7 +45,7 @@ if test "${RELOCATING}"; then
 else
   R_TEXT=
   R_DATA=
-  R_RDATA=
+  R_RDATA='*(.rdata)'
   R_IDATA=
   R_CRT=
   R_RSRC=
@@ -61,6 +69,7 @@ SECTIONS
     ${RELOCATING+ *(.init)}
     *(.text)
     ${R_TEXT}
+    ${RELOCATING+ *(.text.*)}
     *(.glue_7t)
     *(.glue_7)
     ${CONSTRUCTING+ ___CTOR_LIST__ = .; __CTOR_LIST__ = . ; 
@@ -93,14 +102,17 @@ SECTIONS
 
   .rdata ${RELOCATING+BLOCK(__section_alignment__)} :
   {
-    *(.rdata)
     ${R_RDATA}
-    ${RELOCATING+ *(.eh_frame)}
     ${RELOCATING+___RUNTIME_PSEUDO_RELOC_LIST__ = .;}
     ${RELOCATING+__RUNTIME_PSEUDO_RELOC_LIST__ = .;}
     *(.rdata_runtime_pseudo_reloc)
     ${RELOCATING+___RUNTIME_PSEUDO_RELOC_LIST_END__ = .;}
     ${RELOCATING+__RUNTIME_PSEUDO_RELOC_LIST_END__ = .;}
+  }
+
+  .eh_frame ${RELOCATING+BLOCK(__section_alignment__)} :
+  {
+    *(.eh_frame)
   }
 
   .pdata ${RELOCATING+BLOCK(__section_alignment__)} :
@@ -204,6 +216,11 @@ SECTIONS
   .debug_pubnames ${RELOCATING+BLOCK(__section_alignment__)} ${RELOCATING+(NOLOAD)} :
   {
     *(.debug_pubnames)
+  }
+
+  .debug_pubtypes ${RELOCATING+BLOCK(__section_alignment__)} ${RELOCATING+(NOLOAD)} :
+  {
+    *(.debug_pubtypes)
   }
 
   /* DWARF 2.  */

@@ -4,31 +4,31 @@
 #readelf: -WSsrl
 #target: powerpc64*-*-*
 
-There are 16 section headers.*
+There are [0-9]+ section headers, starting at offset 0x[0-9a-f]+:
 
 Section Headers:
  +\[Nr\] Name +Type +Address +Off +Size +ES Flg Lk Inf Al
- +\[ 0\] +NULL +0+ 0+ 0+ 0+ +0 +0 +0
- +\[ 1\] \.hash .*
- +\[ 2\] \.dynsym .*
- +\[ 3\] \.dynstr .*
- +\[ 4\] \.rela\.dyn .*
- +\[ 5\] \.rela\.plt .*
- +\[ 6\] \.text .*
- +\[ 7\] \.tdata +PROGBITS .* 0+38 0+ WAT +0 +0 +8
- +\[ 8\] \.tbss +NOBITS .* 0+38 0+ WAT +0 +0 +8
- +\[ 9\] \.dynamic .*
- +\[10\] \.branch_lt .*
- +\[11\] \.got .*
- +\[12\] \.plt .*
- +\[13\] \.shstrtab .*
- +\[14\] \.symtab .*
- +\[15\] \.strtab .*
+ +\[[ 0-9]+\] +NULL +0+ 0+ 0+ 0+ +0 +0 +0
+ +\[[ 0-9]+\] \.hash .*
+ +\[[ 0-9]+\] \.dynsym .*
+ +\[[ 0-9]+\] \.dynstr .*
+ +\[[ 0-9]+\] \.rela\.dyn .*
+ +\[[ 0-9]+\] \.rela\.plt .*
+ +\[[ 0-9]+\] \.text .*
+ +\[[ 0-9]+\] \.tdata +PROGBITS .* 0+38 0+ WAT +0 +0 +8
+ +\[[ 0-9]+\] \.tbss +NOBITS .* 0+38 0+ WAT +0 +0 +8
+ +\[[ 0-9]+\] \.dynamic .*
+ +\[[ 0-9]+\] \.branch_lt .*
+ +\[[ 0-9]+\] \.got .*
+ +\[[ 0-9]+\] \.plt .*
+ +\[[ 0-9]+\] \.shstrtab .*
+ +\[[ 0-9]+\] \.symtab .*
+ +\[[ 0-9]+\] \.strtab .*
 #...
 
 Elf file type is DYN \(Shared object file\)
 Entry point 0x[0-9a-f]+
-There are 4 program headers.*
+There are [0-9]+ program headers, starting at offset [0-9]+
 
 Program Headers:
  +Type +Offset +VirtAddr +PhysAddr +FileSiz +MemSiz +Flg Align
@@ -82,7 +82,7 @@ Symbol table '\.dynsym' contains [0-9]+ entries:
 .* TLS +GLOBAL DEFAULT +8 gd0
 .* TLS +GLOBAL DEFAULT +8 ie0
 
-Symbol table '\.symtab' contains .* entries:
+Symbol table '\.symtab' contains [0-9]+ entries:
  +Num: +Value +Size Type +Bind +Vis +Ndx Name
 .* NOTYPE +LOCAL +DEFAULT +UND 
 .* SECTION LOCAL +DEFAULT +1 
@@ -106,7 +106,9 @@ Symbol table '\.symtab' contains .* entries:
 .* TLS +LOCAL +DEFAULT +7 le5
 .* NOTYPE +LOCAL +DEFAULT +11 \.Lie0
 .* OBJECT +LOCAL +HIDDEN +ABS _DYNAMIC
-.* NOTYPE +LOCAL +DEFAULT +6 \.__tls_get_addr
+.* NOTYPE +LOCAL +DEFAULT +6 00000010\.plt_call\.__tls_get_addr\+0
+.* NOTYPE +LOCAL +DEFAULT +6 __glink_PLTresolve
+.* NOTYPE +LOCAL +DEFAULT +UND \.__tls_get_addr
 .* TLS +GLOBAL DEFAULT +UND gd
 .* TLS +GLOBAL DEFAULT +8 le0
 .* NOTYPE +GLOBAL DEFAULT +UND __tls_get_addr

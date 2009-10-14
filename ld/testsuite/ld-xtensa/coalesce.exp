@@ -1,6 +1,6 @@
 # Test literal coaslescing for Xtensa targets.
 # By David Heine, Tensilica, Inc.
-#   Copyright 2002, 2003, 2007
+#   Copyright 2002, 2003, 2005, 2007, 2008
 #   Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
@@ -20,7 +20,7 @@
 # Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston,
 # MA 02110-1301, USA.
 
-if ![istarget "xtensa-*-*"] {
+if ![istarget "xtensa*-*-*"] {
     return
 }
 

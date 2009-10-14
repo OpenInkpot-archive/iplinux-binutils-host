@@ -1,6 +1,6 @@
 /* Linker file opening and searching.
    Copyright 1991, 1992, 1993, 1994, 1995, 1998, 1999, 2000, 2001, 2002,
-   2003, 2004, 2005, 2007 Free Software Foundation, Inc.
+   2003, 2004, 2005, 2007, 2008, 2009 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -98,28 +98,28 @@ is_sysrooted_pathname (const char *name, bfd_boolean notsame)
 void
 ldfile_add_library_path (const char *name, bfd_boolean cmdline)
 {
-  search_dirs_type *new;
+  search_dirs_type *new_dirs;
 
   if (!cmdline && config.only_cmd_line_lib_dirs)
     return;
 
-  new = xmalloc (sizeof (search_dirs_type));
-  new->next = NULL;
-  new->cmdline = cmdline;
-  *search_tail_ptr = new;
-  search_tail_ptr = &new->next;
+  new_dirs = (search_dirs_type *) xmalloc (sizeof (search_dirs_type));
+  new_dirs->next = NULL;
+  new_dirs->cmdline = cmdline;
+  *search_tail_ptr = new_dirs;
+  search_tail_ptr = &new_dirs->next;
 
   /* If a directory is marked as honoring sysroot, prepend the sysroot path
      now.  */
   if (name[0] == '=')
     {
-      new->name = concat (ld_sysroot, name + 1, NULL);
-      new->sysrooted = TRUE;
+      new_dirs->name = concat (ld_sysroot, name + 1, (const char *) NULL);
+      new_dirs->sysrooted = TRUE;
     }
   else
     {
-      new->name = xstrdup (name);
-      new->sysrooted = is_sysrooted_pathname (name, FALSE);
+      new_dirs->name = xstrdup (name);
+      new_dirs->sysrooted = is_sysrooted_pathname (name, FALSE);
     }
 }
 
@@ -272,11 +272,11 @@ ldfile_try_open_bfd (const char *attempt,
 	    }
 
 	  if (entry->search_dirs_flag
-	      && !bfd_arch_get_compatible (check, output_bfd,
+	      && !bfd_arch_get_compatible (check, link_info.output_bfd,
 					   command_line.accept_unknown_input_arch)
 	      /* XCOFF archives can have 32 and 64 bit objects.  */
 	      && ! (bfd_get_flavour (check) == bfd_target_xcoff_flavour
-		    && bfd_get_flavour (output_bfd) == bfd_target_xcoff_flavour
+		    && bfd_get_flavour (link_info.output_bfd) == bfd_target_xcoff_flavour
 		    && bfd_check_format (entry->the_bfd, bfd_archive)))
 	    {
 	      if (command_line.warn_search_mismatch)
@@ -343,19 +343,12 @@ ldfile_open_file_search (const char *arch,
 	    }
 	}
 
-      string = xmalloc (strlen (search->name)
-			+ strlen (slash)
-			+ strlen (lib)
-			+ strlen (entry->filename)
-			+ strlen (arch)
-			+ strlen (suffix)
-			+ 1);
-
       if (entry->is_archive)
-	sprintf (string, "%s%s%s%s%s%s", search->name, slash,
-		 lib, entry->filename, arch, suffix);
+	string = concat (search->name, slash, lib, entry->filename,
+			 arch, suffix, (const char *) NULL);
       else
-	sprintf (string, "%s%s%s", search->name, slash, entry->filename);
+	string = concat (search->name, slash, entry->filename,
+			 (const char *) 0);
 
       if (ldfile_try_open_bfd (string, entry))
 	{
@@ -429,7 +422,6 @@ static FILE *
 try_open (const char *name, const char *exten)
 {
   FILE *result;
-  char buff[1000];
 
   result = fopen (name, "r");
 
@@ -446,7 +438,9 @@ try_open (const char *name, const char *exten)
 
   if (*exten)
     {
-      sprintf (buff, "%s%s", name, exten);
+      char *buff;
+
+      buff = concat (name, exten, (const char *) NULL);
       result = fopen (buff, "r");
 
       if (trace_file_tries)
@@ -456,44 +450,135 @@ try_open (const char *name, const char *exten)
 	  else
 	    info_msg (_("opened script file %s\n"), buff);
 	}
+      free (buff);
     }
 
   return result;
 }
 
-/* Try to open NAME; if that fails, look for it in any directories
-   specified with -L, without and with EXTEND appended.  */
+/* Return TRUE iff directory DIR contains an "ldscripts" subdirectory.  */
+
+static bfd_boolean
+check_for_scripts_dir (char *dir)
+{
+  char *buf;
+  struct stat s;
+  bfd_boolean res;
+
+  buf = concat (dir, "/ldscripts", (const char *) NULL);
+  res = stat (buf, &s) == 0 && S_ISDIR (s.st_mode);
+  free (buf);
+  return res;
+}
+
+/* Return the default directory for finding script files.
+   We look for the "ldscripts" directory in:
+
+   SCRIPTDIR (passed from Makefile)
+	     (adjusted according to the current location of the binary)
+   SCRIPTDIR (passed from Makefile)
+   the dir where this program is (for using it from the build tree).  */
+
+static char *
+find_scripts_dir (void)
+{
+  char *dir;
+
+  dir = make_relative_prefix (program_name, BINDIR, SCRIPTDIR);
+  if (dir)
+    {
+      if (check_for_scripts_dir (dir))
+	return dir;
+      free (dir);
+    }
+
+  dir = make_relative_prefix (program_name, TOOLBINDIR, SCRIPTDIR);
+  if (dir)
+    {
+      if (check_for_scripts_dir (dir))
+	return dir;
+      free (dir);
+    }
+
+  if (check_for_scripts_dir (SCRIPTDIR))
+    /* We've been installed normally.  */
+    return SCRIPTDIR;
+
+  /* Look for "ldscripts" in the dir where our binary is.  */
+  dir = make_relative_prefix (program_name, ".", ".");
+  if (dir)
+    {
+      if (check_for_scripts_dir (dir))
+	return dir;
+      free (dir);
+    }
+
+  return NULL;
+}
+
+/* If DEFAULT_ONLY is false, try to open NAME; if that fails, look for
+   it in directories specified with -L, then in the default script
+   directory, without and with EXTEND appended.  If DEFAULT_ONLY is
+   true, the search is restricted to the default script location.  */
 
 static FILE *
-ldfile_find_command_file (const char *name, const char *extend)
+ldfile_find_command_file (const char *name, const char *extend,
+			  bfd_boolean default_only)
 {
   search_dirs_type *search;
-  FILE *result;
-  char buffer[1000];
+  FILE *result = NULL;
+  char *buffer;
+  static search_dirs_type *script_search;
 
-  /* First try raw name.  */
-  result = try_open (name, "");
-  if (result == NULL)
+  if (!default_only)
     {
-      /* Try now prefixes.  */
-      for (search = search_head; search != NULL; search = search->next)
-	{
-	  sprintf (buffer, "%s%s%s", search->name, slash, name);
+      /* First try raw name.  */
+      result = try_open (name, "");
+      if (result != NULL)
+	return result;
+    }
 
-	  result = try_open (buffer, extend);
-	  if (result)
-	    break;
+  if (!script_search)
+    {
+      char *script_dir = find_scripts_dir ();
+      if (script_dir)
+	{
+	  search_dirs_type **save_tail_ptr = search_tail_ptr;
+	  search_tail_ptr = &script_search;
+	  ldfile_add_library_path (script_dir, TRUE);
+	  search_tail_ptr = save_tail_ptr;
 	}
     }
 
+  /* Temporarily append script_search to the path list so that the
+     paths specified with -L will be searched first.  */
+  *search_tail_ptr = script_search;
+
+  /* Try now prefixes.  */
+  for (search = default_only ? script_search : search_head;
+       search != NULL;
+       search = search->next)
+    {
+      buffer = concat (search->name, slash, name, (const char *) NULL);
+      result = try_open (buffer, extend);
+      free (buffer);
+      if (result)
+	break;
+    }
+
+  /* Restore the original path list.  */
+  *search_tail_ptr = NULL;
+
   return result;
 }
 
-void
-ldfile_open_command_file (const char *name)
+/* Open command file NAME.  */
+
+static void
+ldfile_open_command_file_1 (const char *name, bfd_boolean default_only)
 {
   FILE *ldlex_input_stack;
-  ldlex_input_stack = ldfile_find_command_file (name, "");
+  ldlex_input_stack = ldfile_find_command_file (name, "", default_only);
 
   if (ldlex_input_stack == NULL)
     {
@@ -509,23 +594,41 @@ ldfile_open_command_file (const char *name)
   saved_script_handle = ldlex_input_stack;
 }
 
+/* Open command file NAME in the current directory, -L directories,
+   the default script location, in that order.  */
+
+void
+ldfile_open_command_file (const char *name)
+{
+  ldfile_open_command_file_1 (name, FALSE);
+}
+
+/* Open command file NAME at the default script location.  */
+
+void
+ldfile_open_default_command_file (const char *name)
+{
+  ldfile_open_command_file_1 (name, TRUE);
+}
+
 void
 ldfile_add_arch (const char *in_name)
 {
   char *name = xstrdup (in_name);
-  search_arch_type *new = xmalloc (sizeof (search_arch_type));
+  search_arch_type *new_arch = (search_arch_type *)
+      xmalloc (sizeof (search_arch_type));
 
   ldfile_output_machine_name = in_name;
 
-  new->name = name;
-  new->next = NULL;
+  new_arch->name = name;
+  new_arch->next = NULL;
   while (*name)
     {
       *name = TOLOWER (*name);
       name++;
     }
-  *search_arch_tail_ptr = new;
-  search_arch_tail_ptr = &new->next;
+  *search_arch_tail_ptr = new_arch;
+  search_arch_tail_ptr = &new_arch->next;
 
 }
 

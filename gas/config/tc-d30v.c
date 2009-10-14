@@ -1,6 +1,6 @@
 /* tc-d30v.c -- Assembler code for the Mitsubishi D30V
-   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2005, 2006, 2007
-   Free Software Foundation, Inc.
+   Copyright 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2005, 2006, 2007, 2008,
+   2009 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -23,6 +23,7 @@
 #include "safe-ctype.h"
 #include "subsegs.h"
 #include "opcode/d30v.h"
+#include "dwarf2dbg.h"
 
 const char comment_chars[]        = ";";
 const char line_comment_chars[]   = "#";
@@ -285,44 +286,10 @@ md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
   return 0;
 }
 
-/* Turn a string in input_line_pointer into a floating point constant
-   of type TYPE, and store the appropriate bytes in *LITP.  The number
-   of LITTLENUMS emitted is stored in *SIZEP.  An error message is
-   returned, or NULL on OK.  */
-
 char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  int prec;
-  LITTLENUM_TYPE words[4];
-  char *t;
-  int i;
-
-  switch (type)
-    {
-    case 'f':
-      prec = 2;
-      break;
-    case 'd':
-      prec = 4;
-      break;
-    default:
-      *sizeP = 0;
-      return _("bad call to md_atof");
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * 2;
-
-  for (i = 0; i < prec; i++)
-    {
-      md_number_to_chars (litP, (valueT) words[i], 2);
-      litP += 2;
-    }
-  return NULL;
+  return ieee_md_atof (type, litP, sizeP, TRUE);
 }
 
 void
@@ -386,7 +353,7 @@ postfix (char *p)
 }
 
 static bfd_reloc_code_real_type
-get_reloc (struct d30v_operand *op, int rel_flag)
+get_reloc (const struct d30v_operand *op, int rel_flag)
 {
   switch (op->bits)
     {
@@ -572,7 +539,7 @@ build_insn (struct d30v_insn *opcode, expressionS *opers)
 	    as_fatal (_("too many fixups"));
 
 	  fixups->fix[fixups->fc].reloc =
-	    get_reloc ((struct d30v_operand *) &d30v_operand_table[form->operands[i]], op->reloc_flag);
+	    get_reloc (d30v_operand_table + form->operands[i], op->reloc_flag);
 	  fixups->fix[fixups->fc].size = 4;
 	  fixups->fix[fixups->fc].exp = opers[i];
 	  fixups->fix[fixups->fc].operand = form->operands[i];
@@ -627,6 +594,7 @@ write_long (struct d30v_insn *opcode ATTRIBUTE_UNUSED,
   int i, where;
   char *f = frag_more (8);
 
+  dwarf2_emit_insn (8);
   insn |= FM11;
   d30v_number_to_chars (f, insn, 8);
 
@@ -654,6 +622,7 @@ write_1_short (struct d30v_insn *opcode,
   char *f = frag_more (8);
   int i, where;
 
+  dwarf2_emit_insn (8);
   if (warn_nops == NOP_ALL)
     as_warn (_("%s NOP inserted"), use_sequential ?
 	     _("sequential") : _("parallel"));
@@ -1121,6 +1090,7 @@ write_2_short (struct d30v_insn *opcode1,
     }
 
   f = frag_more (8);
+  dwarf2_emit_insn (8);
   d30v_number_to_chars (f, insn, 8);
 
   /* If the previous instruction was a 32-bit multiply but it is put into a
@@ -1550,7 +1520,7 @@ d30v_align (int n, char *pfill, symbolS *label)
       valueT       old_value;
       valueT       new_value;
 
-      assert (S_GET_SEGMENT (label) == now_seg);
+      gas_assert (S_GET_SEGMENT (label) == now_seg);
 
       old_frag  = symbol_get_frag (label);
       old_value = S_GET_VALUE (label);
@@ -1718,6 +1688,7 @@ md_assemble (char *str)
 	      else
 		{
 		  f = frag_more (8);
+		  dwarf2_emit_insn (8);
 		  d30v_number_to_chars (f, NOP2, 8);
 
 		  if (warn_nops == NOP_ALL || warn_nops == NOP_MULTIPLY)
@@ -1902,6 +1873,8 @@ d30v_frob_label (symbolS *lab)
   /* Record this label for future adjustment after we find out what
      kind of data it references, and the required alignment therewith.  */
   d30v_last_label = lab;
+
+  dwarf2_emit_label (lab);
 }
 
 /* Hook into cons for capturing alignment changes.  */
@@ -2147,4 +2120,3 @@ const pseudo_typeS md_pseudo_table[] =
   { "sect.s", s_d30v_section, 0 },
   { NULL, NULL, 0 }
 };
-

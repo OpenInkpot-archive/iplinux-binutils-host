@@ -1,6 +1,6 @@
 /* macro.c - macro support for gas
    Copyright 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003,
-   2004, 2005, 2006, 2007 Free Software Foundation, Inc.
+   2004, 2005, 2006, 2007, 2008 Free Software Foundation, Inc.
 
    Written by Steve and Judy Chamberlain of Cygnus Support,
       sac@cygnus.com
@@ -393,7 +393,7 @@ get_any_string (int idx, sb *in, sb *out)
 	}
       else
 	{
-	  char *br_buf = xmalloc(1);
+	  char *br_buf = (char *) xmalloc(1);
 	  char *in_br = br_buf;
 
 	  *in_br = '\0';
@@ -424,7 +424,7 @@ get_any_string (int idx, sb *in, sb *out)
 		    --in_br;
 		  else
 		    {
-		      br_buf = xmalloc(strlen(in_br) + 2);
+		      br_buf = (char *) xmalloc(strlen(in_br) + 2);
 		      strcpy(br_buf + 1, in_br);
 		      free(in_br);
 		      in_br = br_buf;
@@ -457,7 +457,7 @@ new_formal (void)
 {
   formal_entry *formal;
 
-  formal = xmalloc (sizeof (formal_entry));
+  formal = (formal_entry *) xmalloc (sizeof (formal_entry));
 
   sb_new (&formal->name);
   sb_new (&formal->def);
@@ -676,7 +676,7 @@ define_macro (int idx, sb *in, sb *label,
   if (hash_find (macro_hash, macro->name))
     error = _("Macro `%s' was already defined");
   if (!error)
-    error = hash_jam (macro_hash, macro->name, (PTR) macro);
+    error = hash_jam (macro_hash, macro->name, (void *) macro);
 
   if (namep != NULL)
     *namep = macro->name;
@@ -968,11 +968,11 @@ macro_expand_body (sb *in, sb *out, formal_entry *formals,
   while (loclist != NULL)
     {
       formal_entry *f;
+      const char *name;
 
       f = loclist->next;
-      /* Setting the value to NULL effectively deletes the entry.  We
-         avoid calling hash_delete because it doesn't reclaim memory.  */
-      hash_jam (formal_hash, sb_terminate (&loclist->name), NULL);
+      name = sb_terminate (&loclist->name);
+      hash_delete (formal_hash, name, f == NULL);
       del_formal (loclist);
       loclist = f;
     }
@@ -1270,8 +1270,10 @@ delete_macro (const char *name)
     copy[i] = TOLOWER (name[i]);
   copy[i] = '\0';
 
-  /* Since hash_delete doesn't free memory, just clear out the entry.  */
-  if ((macro = hash_find (macro_hash, copy)) != NULL)
+  /* We can only ask hash_delete to free memory if we are deleting
+     macros in reverse order to their definition.
+     So just clear out the entry.  */
+  if ((macro = (macro_entry *) hash_find (macro_hash, copy)) != NULL)
     {
       hash_jam (macro_hash, copy, NULL);
       free_macro (macro);
