@@ -1,4 +1,5 @@
 # Linker Script for National Semiconductor's CRX-ELF32.
+test -z "$RELOCATING" && exit 0
 
 # The next line should be uncommented if it is desired to link
 # without libstart.o and directly enter main.
@@ -10,14 +11,8 @@ cat <<EOF
 
 /* Example Linker Script for linking NS CRX elf32 files. */
 
-/* The next line forces the entry point (${ENTRY} in this script)
-   to be entered in the output file as an undefined symbol.
-   It is needed in case the entry point is not called explicitly
-   (which is the usual case) AND is in an archive.  */
-
 OUTPUT_FORMAT("${OUTPUT_FORMAT}")
 OUTPUT_ARCH(${ARCH})
-EXTERN(${ENTRY})
 ENTRY(${ENTRY})
 
 /* Define memory regions.  */
@@ -135,21 +130,21 @@ SECTIONS
    The heap and stack are aligned to the bus width, as a speed optimization
    for accessing data located there.  */
 
-  .heap :
+  .heap (NOLOAD) :
   {
     . = ALIGN(4);
     __HEAP_START = .;
     . += 0x2000; __HEAP_MAX = .;
   } > ram
 
-  .stack :
+  .stack (NOLOAD) :
   {
     . = ALIGN(4);
     . += 0x6000;
     __STACK_START = .;
   } > ram
 
-  .istack :
+  .istack (NOLOAD) :
   {
     . = ALIGN(4);
     . += 0x100;

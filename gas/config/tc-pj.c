@@ -1,5 +1,5 @@
 /* tc-pj.c -- Assemble code for Pico Java
-   Copyright 1999, 2000, 2001, 2002, 2003, 2005, 2007
+   Copyright 1999, 2000, 2001, 2002, 2003, 2005, 2007, 2009
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -183,9 +183,9 @@ fake_opcode (const char *name,
    can have another name.  */
 
 static void
-alias (const char *new, const char *old)
+alias (const char *new_name, const char *old)
 {
-  hash_insert (opcode_hash_control, new,
+  hash_insert (opcode_hash_control, new_name,
 	       (char *) hash_find (opcode_hash_control, old));
 }
 
@@ -261,6 +261,7 @@ md_assemble (char *str)
       return;
     }
 
+  dwarf2_emit_insn (0);
   if (opcode->opcode == -1)
     {
       /* It's a fake opcode.  Dig out the args and pretend that was
@@ -285,7 +286,7 @@ md_assemble (char *str)
 	    op_end++;
 
 	  if (*op_end == 0)
-	    as_bad ("expected expresssion");
+	    as_bad (_("expected expresssion"));
 
 	  op_end = parse_exp_save_ilp (op_end, &arg);
 
@@ -304,67 +305,18 @@ md_assemble (char *str)
 	op_end++;
 
       if (*op_end != 0)
-	as_warn ("extra stuff on line ignored");
+	as_warn (_("extra stuff on line ignored"));
 
     }
 
   if (pending_reloc)
-    as_bad ("Something forgot to clean up\n");
-
+    as_bad (_("Something forgot to clean up\n"));
 }
-
-/* Turn a string in input_line_pointer into a floating point constant
-   of type type, and store the appropriate bytes in *LITP.  The number
-   of LITTLENUMS emitted is stored in *SIZEP .  An error message is
-   returned, or NULL on OK.  */
 
 char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  int prec;
-  LITTLENUM_TYPE words[4];
-  char *t;
-  int i;
-
-  switch (type)
-    {
-    case 'f':
-      prec = 2;
-      break;
-
-    case 'd':
-      prec = 4;
-      break;
-
-    default:
-      *sizeP = 0;
-      return _("bad call to md_atof");
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * 2;
-
-  if (!target_big_endian)
-    {
-      for (i = prec - 1; i >= 0; i--)
-	{
-	  md_number_to_chars (litP, (valueT) words[i], 2);
-	  litP += 2;
-	}
-    }
-  else
-    {
-      for (i = 0; i < prec; i++)
-	{
-	  md_number_to_chars (litP, (valueT) words[i], 2);
-	  litP += 2;
-	}
-    }
-
-  return NULL;
+  return ieee_md_atof (type, litP, sizeP, target_big_endian);
 }
 
 const char *md_shortopts = "";
@@ -538,7 +490,7 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED, fixS *fixp)
 		    bfd_get_reloc_code_name (r_type));
       /* Set howto to a garbage value so that we can keep going.  */
       rel->howto = bfd_reloc_type_lookup (stdoutput, BFD_RELOC_32);
-      assert (rel->howto != NULL);
+      gas_assert (rel->howto != NULL);
     }
 
   return rel;

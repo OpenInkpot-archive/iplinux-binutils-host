@@ -1,6 +1,6 @@
 /* as.h - global header file
    Copyright 1987, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007
+   1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -36,36 +36,7 @@
   	COMMON as "".
    If TEST is #defined, then we are testing a module: #define COMMON as "".  */
 
-#include "config.h"
-
-/* This is the code recommended in the autoconf documentation, almost
-   verbatim.  If it doesn't work for you, let me know, and notify
-   djm@gnu.ai.mit.edu as well.  */
-/* Added void* version for STDC case.  This is to be compatible with
-   the declaration in bison.simple, used for m68k operand parsing.
-   --KR 1995.08.08 */
-/* Force void* decl for hpux.  This is what Bison uses.  --KR 1995.08.16 */
-
-#ifndef __GNUC__
-# if HAVE_ALLOCA_H
-#  include <alloca.h>
-# else
-#  ifdef _AIX
-/* Indented so that pre-ansi C compilers will ignore it, rather than
-   choke on it.  Some versions of AIX require this to be the first
-   thing in the file.  */
- #pragma alloca
-#  else
-#   ifndef alloca /* predefined by HP cc +Olibcalls */
-#    if !defined (__STDC__) && !defined (__hpux)
-extern char *alloca ();
-#    else
-extern void *alloca ();
-#    endif /* __STDC__, __hpux */
-#   endif /* alloca */
-#  endif /* _AIX */
-# endif /* HAVE_ALLOCA_H */
-#endif /* __GNUC__ */
+#include "alloca-conf.h"
 
 /* Prefer varargs for non-ANSI compiler, since some will barf if the
    ellipsis definition is used with a no-arguments declaration.  */
@@ -135,9 +106,9 @@ typedef int * va_list;
 #undef NDEBUG
 #endif
 #if __GNUC__ < 2 || (__GNUC__ == 2 && __GNUC_MINOR__ < 6)
-#define __PRETTY_FUNCTION__  ((char*)0)
+#define __PRETTY_FUNCTION__  ((char *) NULL)
 #endif
-#define assert(P) \
+#define gas_assert(P) \
   ((void) ((P) ? 0 : (as_assert (__FILE__, __LINE__, __PRETTY_FUNCTION__), 0)))
 #undef abort
 #define abort()		as_abort (__FILE__, __LINE__, __PRETTY_FUNCTION__)
@@ -171,8 +142,8 @@ extern int ffs (int);
 extern void free ();
 #endif
 #ifdef NEED_DECLARATION_MALLOC
-extern PTR malloc ();
-extern PTR realloc ();
+extern void *malloc ();
+extern void *realloc ();
 #endif
 #ifdef NEED_DECLARATION_STRSTR
 extern char *strstr ();
@@ -264,7 +235,7 @@ typedef addressT valueT;
 
 #if ENABLE_CHECKING || defined (DEBUG)
 #ifndef know
-#define know(p) assert(p)	/* Verify our assumptions!  */
+#define know(p) gas_assert(p)	/* Verify our assumptions!  */
 #endif /* not yet defined */
 #else
 #define know(p)			/* know() checks are no-op.ed  */
@@ -534,6 +505,8 @@ void   as_bad_value_out_of_range (char *, offsetT, offsetT, offsetT, char *, uns
 void   print_version_id (void);
 char * app_push (void);
 char * atof_ieee (char *, int, LITTLENUM_TYPE *);
+char * ieee_md_atof (int, char *, int *, bfd_boolean);
+char * vax_md_atof (int, char *, int *);
 char * input_scrub_include_file (char *, char *);
 void   input_scrub_insert_line (const char *);
 void   input_scrub_insert_file (char *);
@@ -612,6 +585,10 @@ int generic_force_reloc (struct fix *);
 #include "emul.h"
 #endif
 #include "listing.h"
+
+#ifdef H_TICK_HEX
+extern int enable_h_tick_hex;
+#endif
 
 #ifdef TC_M68K
 /* True if we are assembling in m68k MRI mode.  */

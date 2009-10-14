@@ -1,4 +1,4 @@
-@c Copyright 2000, 2001, 2005 Free Software Foundation, Inc.
+@c Copyright 2000, 2001, 2005, 2006, 2007 Free Software Foundation, Inc.
 @c This is part of the GAS manual.
 @c For copying conditions, see the file as.texinfo.
 
@@ -230,7 +230,7 @@ Determines the kinds of suffixes to be allowed.  Valid values are
 @code{SUFFIX_FLAG} which indicates the absence or presence of
 conditional suffixes and flag setting by the extension instruction.
 It is also possible to specify that an instruction sets the flags and
-is condtional by using @code{SUFFIX_CODE} | @code{SUFFIX_FLAG}.
+is conditional by using @code{SUFFIX_CODE} | @code{SUFFIX_FLAG}.
 
 @item @var{syntaxclass}
 Determines the syntax class for the instruction.  It can have the

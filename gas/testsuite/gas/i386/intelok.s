@@ -1,12 +1,4 @@
 	.intel_syntax noprefix
-	.equiv byte, 1
-	.equiv word, 2
-	.equiv dword, 4
-	.equiv fword, 6
-	.equiv qword, 8
-	.equiv tbyte, 10
-	.equiv oword, 16
-	.equiv xmmword, 16
 	.text
 start:
 
@@ -29,6 +21,8 @@ start:
 	addsd	xmm0, qword ptr [eax]
 	addss	xmm0, [eax]
 	addss	xmm0, dword ptr [eax]
+	bound	ax, dword ptr [ecx]
+	bound	eax, qword ptr [ecx]
 	call	word ptr [eax]
 	call	dword ptr [eax]
 	call	fword ptr [eax]
@@ -113,7 +107,24 @@ start:
 	mov	eax, tbyte[eax+dword*2]
 	mov	eax, [word+eax*dword]
 	mov	eax, word[eax*dword]
+	movzx	eax, word ptr byte ptr [eax]
+	movzx	eax, byte ptr [word ptr [eax]]
+	movzx	eax, word ptr es:[eax]
+	movzx	eax, byte ptr [fs:[eax]]
+	movzx	eax, gs:word ptr [eax]
 
+	mov	eax, FLAT:1
+	mov	eax, FLAT:[1]
+	mov	eax, gs:1
+	mov	eax, gs:[1]
+	mov	eax, x
+	mov	eax, FLAT:x
+	mov	eax, gs:x
+	mov	eax, [x]
+
+	mov	eax, [eax*1]
+	mov	eax, [eax*+1]
+	mov	eax, [+1*eax]
 	mov	eax, [eax*+2]
 	mov	eax, [+2*eax]
 	mov	eax, [ecx*dword]
@@ -122,19 +133,24 @@ start:
 	mov	eax, [eax]+1
 	mov	eax, [eax - 5 + ecx]
 	mov	eax, [eax + 5 and 3 + ecx]
-	mov	eax, [eax + 5*3 + ecx]
+	mov	eax, [eax + 5 * 3 + ecx]
 	mov	eax, [oword][eax]
 	mov	eax, [eax][oword]
 	mov	eax, xmmword[eax][ecx]
+	mov	eax, [eax]+[ecx]
 	mov	eax, [eax]+1[ecx]
-	mov	eax, [eax][ecx]+1
-	mov	eax, [1][eax][ecx]
-	mov	eax, [eax][1][ecx]
-	mov	eax, [eax][ecx][1]
+	mov	eax, [eax+2[ecx]]
+	mov	eax, [eax][ecx]+3
+	mov	eax, [4][eax][ecx]
+	mov	eax, [eax][5][ecx]
+	mov	eax, [eax][ecx][6]
+	mov	eax, [eax+ecx*(2+2)+7]
+	mov	eax, [eax+(ecx+2)*4]
 	mov	eax, [[eax]]
 	mov	eax, [eax[ecx]]
 	mov	eax, [[eax][ecx]]
 	mov	eax, es:[eax]
+	mov	eax, fs:gs:[eax]
 
 	# expressions
 
@@ -161,17 +177,28 @@ start:
 
 	# offset expressions
 
+	mov	eax, 1
+	mov	eax, [1]
+	mov	eax, dword ptr 1
+	mov	eax, dword ptr [1]
 	mov	eax, offset x
 	mov	eax, offset flat:x
-	mov	eax, flat:x
+	mov	eax, offset gs:x
 	mov	eax, offset [x]
 	mov	eax, offset flat:[x]
-	mov	eax, flat:[x]
+	mov	eax, offset gs:[x]
 	mov	eax, [offset x]
+	mov	eax, [offset [x]]
+	mov	eax, dword ptr [offset [x]]
+	mov	eax, FLAT:[offset [x]]
+	mov	eax, gs:[offset [x]]
+	mov	eax, offset [dword ptr [x]]
+	mov	eax, offset [gs:[x]]
 	mov	eax, [eax + offset x]
 	mov	eax, [eax + offset 1]
 	mov	eax, [offset x + eax]
-	mov	eax, offset x+1[eax]
+	mov	eax, [offset 1 + eax]
+	mov	eax, offset x + 1[eax]
 	mov	eax, [eax] + offset x
 	mov	eax, [eax] + offset 1
 	mov	eax, offset x + [1]
@@ -182,11 +209,10 @@ start:
 	mov	eax, [5] + [offset x]
 	mov	eax, ss:[6] + offset x
 	mov	eax, ss:[7] + [offset x]
-	mov	eax, dword ptr [8]
 
 	# other operands
 	call	3:5
-	jmp	5:3
+	jmp	5:[3]
 	call	dword ptr xtrn
 	jmp	word ptr xtrn
 

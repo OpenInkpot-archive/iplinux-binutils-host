@@ -1,6 +1,6 @@
 /* tc-mn10200.c -- Assembler code for the Matsushita 10200
    Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
-   2005, 2006, 2007  Free Software Foundation, Inc.
+   2005, 2006, 2007, 2009  Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -321,39 +321,7 @@ md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
 char *
 md_atof (int type, char *litp, int *sizep)
 {
-  int prec;
-  LITTLENUM_TYPE words[4];
-  char *t;
-  int i;
-
-  switch (type)
-    {
-    case 'f':
-      prec = 2;
-      break;
-
-    case 'd':
-      prec = 4;
-      break;
-
-    default:
-      *sizep = 0;
-      return _("bad call to md_atof");
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizep = prec * 2;
-
-  for (i = prec - 1; i >= 0; i--)
-    {
-      md_number_to_chars (litp, (valueT) words[i], 2);
-      litp += 2;
-    }
-
-  return NULL;
+  return ieee_md_atof (type, litp, sizep, FALSE);
 }
 
 void
@@ -1188,6 +1156,7 @@ keep_going:
     abort ();
 
   /* Write out the instruction.  */
+  dwarf2_emit_insn (0);
   if (relaxable && fc > 0)
     {
       /* On a 64-bit host the size of an 'int' is not the same

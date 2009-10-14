@@ -3,7 +3,7 @@
 (echo;echo;echo;echo)>e${EMULATION_NAME}.c # there, now line numbers match ;-)
 fragment <<EOF
 /* This file is part of GLD, the Gnu Linker.
-   Copyright 1999, 2000, 2002, 2003, 2004, 2007
+   Copyright 1999, 2000, 2002, 2003, 2004, 2005, 2007
    Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
@@ -66,7 +66,7 @@ gld${EMULATION_NAME}_add_options
 static void
 gld_${EMULATION_NAME}_list_options (FILE * file)
 {
-  fprintf (file, _("  --format 0|1|2         Specify which COFF version to use\n"));
+  fprintf (file, _("  --format 0|1|2              Specify which COFF version to use\n"));
 }
 
 static bfd_boolean

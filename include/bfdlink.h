@@ -1,6 +1,6 @@
 /* bfdlink.h -- header file for BFD link routines
    Copyright 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002,
-   2003, 2004, 2005, 2006, 2007 Free Software Foundation, Inc.
+   2003, 2004, 2005, 2006, 2007, 2008, 2009 Free Software Foundation, Inc.
    Written by Steve Chamberlain and Ian Lance Taylor, Cygnus Support.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -75,6 +75,12 @@ enum bfd_link_common_skip_ar_aymbols
   bfd_link_common_skip_all
 };
 
+struct bfd_link_hash_common_entry
+  {
+    unsigned int alignment_power;	/* Alignment.  */
+    asection *section;		/* Symbol section.  */
+  };
+
 /* The linking routines use a hash table which uses this structure for
    its elements.  */
 
@@ -143,11 +149,7 @@ struct bfd_link_hash_entry
 	     directly because we don't want to increase the size of
 	     the union; this structure is a major space user in the
 	     linker.  */
-	  struct bfd_link_hash_common_entry
-	    {
-	      unsigned int alignment_power;	/* Alignment.  */
-	      asection *section;		/* Symbol section.  */
-	    } *p;
+	  struct bfd_link_hash_common_entry *p;
 	  bfd_size_type size;	/* Common symbol size.  */
 	} c;
     } u;
@@ -160,11 +162,6 @@ struct bfd_link_hash_table
 {
   /* The hash table itself.  */
   struct bfd_hash_table table;
-  /* The back end which created this hash table.  This indicates the
-     type of the entries in the hash table, which is sometimes
-     important information when linking object files of different
-     types together.  */
-  const bfd_target *creator;
   /* A linked list of undefined and common symbols, linked through the
      next field in the bfd_link_hash_entry structure.  */
   struct bfd_link_hash_entry *undefs;
@@ -202,6 +199,9 @@ extern void bfd_link_add_undef
 /* Remove symbols from the undefs list that don't belong there.  */
 extern void bfd_link_repair_undef_list
   (struct bfd_link_hash_table *table);
+
+/* Read symbols and cache symbol pointer array in outsymbols.  */
+extern bfd_boolean bfd_generic_link_read_symbols (bfd *);
 
 struct bfd_sym_chain
 {
@@ -324,6 +324,9 @@ struct bfd_link_info
   /* TRUE if we should warn when adding a DT_TEXTREL to a shared object.  */
   unsigned int warn_shared_textrel: 1;
 
+  /* TRUE if we should warn alternate ELF machine code.  */
+  unsigned int warn_alternate_em: 1;
+
   /* TRUE if unreferenced sections should be removed.  */
   unsigned int gc_sections: 1;
 
@@ -377,6 +380,9 @@ struct bfd_link_info
      wrap_hash.  Used by PowerPC Linux for 'dot' symbols.  */
   char wrap_char;
 
+  /* Separator between archive and filename in linker script filespecs.  */
+  char path_separator;
+
   /* Function callbacks.  */
   const struct bfd_link_callbacks *callbacks;
 
@@ -395,6 +401,9 @@ struct bfd_link_info
   /* Hash table of symbols which are being wrapped (the --wrap linker
      option).  If this is NULL, no symbols are being wrapped.  */
   struct bfd_hash_table *wrap_hash;
+
+  /* The output BFD.  */
+  bfd *output_bfd;
 
   /* The list of input BFD's involved in the link.  These are chained
      together via the link_next field.  */
@@ -703,8 +712,8 @@ struct bfd_elf_version_expr
   struct bfd_elf_version_expr *next;
   /* Glob pattern.  */
   const char *pattern;
-  /* NULL for a glob pattern, otherwise a straight symbol.  */
-  const char *symbol;
+  /* Set if pattern is not a glob.  */
+  unsigned int literal : 1;
   /* Defined by ".symver".  */
   unsigned int symver : 1;
   /* Defined by version script.  */

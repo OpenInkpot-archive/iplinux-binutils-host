@@ -1,6 +1,6 @@
 /* tc-m32r.c -- Assembler for the Renesas M32R.
    Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
-   2006, 2007 Free Software Foundation, Inc.
+   2006, 2007, 2009 Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -713,6 +713,7 @@ md_begin (void)
 
   /* The sbss section is for local .scomm symbols.  */
   sbss_section = subseg_new (".sbss", 0);
+  seg_info (sbss_section)->bss = 1;
 
   /* This is copied from perform_an_assembly_pass.  */
   applicable = bfd_applicable_section_flags (stdoutput);
@@ -919,7 +920,7 @@ assemble_two_insns (char *str1, char *str2, int parallel_p)
   if (! (first.insn = m32r_cgen_assemble_insn
 	 (gas_cgen_cpu_desc, str1, & first.fields, first.buffer, & errmsg)))
     {
-      as_bad (errmsg);
+      as_bad ("%s", errmsg);
       return;
     }
 
@@ -1033,7 +1034,7 @@ assemble_two_insns (char *str1, char *str2, int parallel_p)
   if (! (second.insn = m32r_cgen_assemble_insn
 	 (gas_cgen_cpu_desc, str1, & second.fields, second.buffer, & errmsg)))
     {
-      as_bad (errmsg);
+      as_bad ("%s", errmsg);
       return;
     }
 
@@ -1224,7 +1225,7 @@ md_assemble (char *str)
 
   if (!insn.insn)
     {
-      as_bad (errmsg);
+      as_bad ("%s", errmsg);
       return;
     }
 
@@ -1808,8 +1809,8 @@ md_convert_frag (bfd *abfd ATTRIBUTE_UNUSED,
     {
       fixS *fixP;
 
-      assert (fragP->fr_subtype != 1);
-      assert (fragP->fr_cgen.insn != 0);
+      gas_assert (fragP->fr_subtype != 1);
+      gas_assert (fragP->fr_cgen.insn != 0);
 
       fixP = gas_cgen_record_fixup (fragP,
 				    /* Offset of branch insn in frag.  */
@@ -1899,7 +1900,7 @@ m32r_record_hi16 (int reloc_type,
 {
   struct m32r_hi_fixup *hi_fixup;
 
-  assert (reloc_type == BFD_RELOC_M32R_HI16_SLO
+  gas_assert (reloc_type == BFD_RELOC_M32R_HI16_SLO
 	  || reloc_type == BFD_RELOC_M32R_HI16_ULO);
 
   hi_fixup = xmalloc (sizeof (* hi_fixup));
@@ -2007,7 +2008,7 @@ m32r_frob_file (void)
       segment_info_type *seginfo;
       int pass;
 
-      assert (FX_OPINFO_R_TYPE (l->fixp) == BFD_RELOC_M32R_HI16_SLO
+      gas_assert (FX_OPINFO_R_TYPE (l->fixp) == BFD_RELOC_M32R_HI16_SLO
 	      || FX_OPINFO_R_TYPE (l->fixp) == BFD_RELOC_M32R_HI16_ULO);
 
       /* Check quickly whether the next fixup happens to be a matching low.  */
@@ -2048,7 +2049,7 @@ m32r_frob_file (void)
 		  for (pf = &seginfo->fix_root;
 		       *pf != l->fixp;
 		       pf = & (*pf)->fx_next)
-		    assert (*pf != NULL);
+		    gas_assert (*pf != NULL);
 
 		  *pf = l->fixp->fx_next;
 
@@ -2113,60 +2114,7 @@ md_number_to_chars (char *buf, valueT val, int n)
 char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  int i;
-  int prec;
-  LITTLENUM_TYPE words[MAX_LITTLENUMS];
-  char *t;
-
-  switch (type)
-    {
-    case 'f':
-    case 'F':
-    case 's':
-    case 'S':
-      prec = 2;
-      break;
-
-    case 'd':
-    case 'D':
-    case 'r':
-    case 'R':
-      prec = 4;
-      break;
-
-      /* FIXME: Some targets allow other format chars for bigger sizes
-         here.  */
-
-    default:
-      *sizeP = 0;
-      return _("Bad call to md_atof()");
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-  *sizeP = prec * sizeof (LITTLENUM_TYPE);
-
-  if (target_big_endian)
-    {
-      for (i = 0; i < prec; i++)
-	{
-	  md_number_to_chars (litP, (valueT) words[i],
-			      sizeof (LITTLENUM_TYPE));
-	  litP += sizeof (LITTLENUM_TYPE);
-	}
-    }
-  else
-    {
-      for (i = prec - 1; i >= 0; i--)
-	{
-	  md_number_to_chars (litP, (valueT) words[i],
-			      sizeof (LITTLENUM_TYPE));
-	  litP += sizeof (LITTLENUM_TYPE);
-	}
-    }
-
-  return 0;
+  return ieee_md_atof (type, litP, sizeP, target_big_endian);
 }
 
 void

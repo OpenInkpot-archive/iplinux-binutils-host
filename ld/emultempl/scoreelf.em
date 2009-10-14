@@ -1,6 +1,7 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright 2006, 2007 Free Software Foundation, Inc.
+#   Copyright 2006, 2007, 2008, 2009 Free Software Foundation, Inc.
 #   Contributed by:
+#   Brain.lin (brain.lin@sunplusct.com)
 #   Mei Ligang (ligang@sunnorth.com.cn)
 #   Pei-Lin Tsai (pltsai@sunplus.com)
 
@@ -27,20 +28,22 @@
 #
 fragment <<EOF
 
+#include "elf32-score.h"
+
 static void
 gld${EMULATION_NAME}_before_parse ()
 {
 #ifndef TARGET_			/* I.e., if not generic.  */
-  ldfile_set_output_arch ("`echo ${ARCH}`");
+  ldfile_set_output_arch ("`echo ${ARCH}`", bfd_arch_unknown);
 #endif /* not TARGET_ */
-  config.dynamic_link = ${DYNAMIC_LINK-true};
-  config.has_shared = `if test -n "$GENERATE_SHLIB_SCRIPT" ; then echo true ; else echo false ; fi`;
+  config.dynamic_link = ${DYNAMIC_LINK-TRUE};
+  config.has_shared = `if test -n "$GENERATE_SHLIB_SCRIPT" ; then echo TRUE ; else echo FALSE ; fi`;
 }
 
 static void
 score_elf_after_open (void)
 {
-  if (strstr (bfd_get_target (output_bfd), "score") == NULL)
+  if (strstr (bfd_get_target (link_info.output_bfd), "score") == NULL)
     {
       /* The score backend needs special fields in the output hash structure.
 	 These will only be created if the output format is an score format,
@@ -71,3 +74,4 @@ LDEMUL_AFTER_OPEN=score_elf_after_open
 
 # Replace the elf before_parse function with our own.
 LDEMUL_BEFORE_PARSE=gld"${EMULATION_NAME}"_before_parse
+

@@ -1,7 +1,7 @@
 /* Utilities to execute a program in a subprocess (possibly linked by pipes
    with other subprocesses), and wait for it.  Generic Unix version
    (also used for UWIN and VMS).
-   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2003, 2004, 2005
+   Copyright (C) 1996, 1997, 1998, 1999, 2000, 2001, 2003, 2004, 2005, 2009
    Free Software Foundation, Inc.
 
 This file is part of the libiberty library.
@@ -65,11 +65,40 @@ extern int errno;
 #ifdef HAVE_VFORK_H
 #include <vfork.h>
 #endif
-#ifdef VMS
-#define vfork() (decc$$alloc_vfork_blocks() >= 0 ? \
-               lib$get_current_invo_context(decc$$get_vfork_jmpbuf()) : -1)
-#endif /* VMS */
+#if defined(VMS) && defined (__LONG_POINTERS)
+#ifndef __CHAR_PTR32
+typedef char * __char_ptr32
+__attribute__ ((mode (SI)));
+#endif
 
+typedef __char_ptr32 *__char_ptr_char_ptr32
+__attribute__ ((mode (SI)));
+
+/* Return a 32 bit pointer to an array of 32 bit pointers 
+   given a 64 bit pointer to an array of 64 bit pointers.  */
+
+static __char_ptr_char_ptr32
+to_ptr32 (char **ptr64)
+{
+  int argc;
+  __char_ptr_char_ptr32 short_argv;
+
+  for (argc=0; ptr64[argc]; argc++);
+
+  /* Reallocate argv with 32 bit pointers.  */
+  short_argv = (__char_ptr_char_ptr32) decc$malloc
+    (sizeof (__char_ptr32) * (argc + 1));
+
+  for (argc=0; ptr64[argc]; argc++)
+    short_argv[argc] = (__char_ptr32) decc$strdup (ptr64[argc]);
+
+  short_argv[argc] = (__char_ptr32) 0;
+  return short_argv;
+
+}
+#else
+#define to_ptr32(argv) argv
+#endif
 
 /* File mode to use for private and world-readable files.  */
 
@@ -269,12 +298,12 @@ static void pex_child_error (struct pex_obj *, const char *, const char *, int)
      ATTRIBUTE_NORETURN;
 static int pex_unix_open_read (struct pex_obj *, const char *, int);
 static int pex_unix_open_write (struct pex_obj *, const char *, int);
-static long pex_unix_exec_child (struct pex_obj *, int, const char *,
+static pid_t pex_unix_exec_child (struct pex_obj *, int, const char *,
 				 char * const *, char * const *,
 				 int, int, int, int,
 				 const char **, int *);
 static int pex_unix_close (struct pex_obj *, int);
-static int pex_unix_wait (struct pex_obj *, long, int *, struct pex_time *,
+static int pex_unix_wait (struct pex_obj *, pid_t, int *, struct pex_time *,
 			  int, const char **, int *);
 static int pex_unix_pipe (struct pex_obj *, int *, int);
 static FILE *pex_unix_fdopenr (struct pex_obj *, int, int);
@@ -355,7 +384,7 @@ pex_child_error (struct pex_obj *obj, const char *executable,
 
 extern char **environ;
 
-static long
+static pid_t
 pex_unix_exec_child (struct pex_obj *obj, int flags, const char *executable,
 		     char * const * argv, char * const * env,
                      int in, int out, int errdes,
@@ -384,7 +413,7 @@ pex_unix_exec_child (struct pex_obj *obj, int flags, const char *executable,
     case -1:
       *err = errno;
       *errmsg = VFORK_STRING;
-      return -1;
+      return (pid_t) -1;
 
     case 0:
       /* Child process.  */
@@ -425,17 +454,17 @@ pex_unix_exec_child (struct pex_obj *obj, int flags, const char *executable,
 
       if ((flags & PEX_SEARCH) != 0)
 	{
-	  execvp (executable, argv);
+	  execvp (executable, to_ptr32 (argv));
 	  pex_child_error (obj, executable, "execvp", errno);
 	}
       else
 	{
-	  execv (executable, argv);
+	  execv (executable, to_ptr32 (argv));
 	  pex_child_error (obj, executable, "execv", errno);
 	}
 
       /* NOTREACHED */
-      return -1;
+      return (pid_t) -1;
 
     default:
       /* Parent process.  */
@@ -445,7 +474,7 @@ pex_unix_exec_child (struct pex_obj *obj, int flags, const char *executable,
 	    {
 	      *err = errno;
 	      *errmsg = "close";
-	      return -1;
+	      return (pid_t) -1;
 	    }
 	}
       if (out != STDOUT_FILE_NO)
@@ -454,7 +483,7 @@ pex_unix_exec_child (struct pex_obj *obj, int flags, const char *executable,
 	    {
 	      *err = errno;
 	      *errmsg = "close";
-	      return -1;
+	      return (pid_t) -1;
 	    }
 	}
       if (errdes != STDERR_FILE_NO)
@@ -463,18 +492,18 @@ pex_unix_exec_child (struct pex_obj *obj, int flags, const char *executable,
 	    {
 	      *err = errno;
 	      *errmsg = "close";
-	      return -1;
+	      return (pid_t) -1;
 	    }
 	}
 
-      return (long) pid;
+      return pid;
     }
 }
 
 /* Wait for a child process to complete.  */
 
 static int
-pex_unix_wait (struct pex_obj *obj, long pid, int *status,
+pex_unix_wait (struct pex_obj *obj, pid_t pid, int *status,
 	       struct pex_time *time, int done, const char **errmsg,
 	       int *err)
 {

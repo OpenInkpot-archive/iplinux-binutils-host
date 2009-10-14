@@ -1,6 +1,6 @@
 /* chew
    Copyright 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1998, 2000, 2001,
-   2002, 2003, 2005, 2007
+   2002, 2003, 2005, 2007, 2009
    Free Software Foundation, Inc.
    Contributed by steve chamberlain @cygnus
 
@@ -120,6 +120,7 @@ static void overwrite_string (string_type *, string_type *);
 static void catbuf (string_type *, char *, unsigned int);
 static void cattext (string_type *, char *);
 static void catstr (string_type *, string_type *);
+static void die (char *);
 #endif
 
 static void
@@ -162,7 +163,9 @@ write_buffer (buffer, f)
      string_type *buffer;
      FILE *f;
 {
-  fwrite (buffer->ptr, buffer->write_idx, 1, f);
+  if (buffer->write_idx != 0
+      && fwrite (buffer->ptr, buffer->write_idx, 1, f) != 1)
+    die ("cannot write output");
 }
 
 static void
@@ -1264,14 +1267,14 @@ dict_type *
 newentry (word)
      char *word;
 {
-  dict_type *new = (dict_type *) malloc (sizeof (dict_type));
-  new->word = word;
-  new->next = root;
-  root = new;
-  new->code = (stinst_type *) malloc (sizeof (stinst_type));
-  new->code_length = 1;
-  new->code_end = 0;
-  return new;
+  dict_type *new_d = (dict_type *) malloc (sizeof (dict_type));
+  new_d->word = word;
+  new_d->next = root;
+  root = new_d;
+  new_d->code = (stinst_type *) malloc (sizeof (stinst_type));
+  new_d->code_length = 1;
+  new_d->code_end = 0;
+  return new_d;
 }
 
 unsigned int
@@ -1296,19 +1299,19 @@ add_intrinsic (name, func)
      char *name;
      void (*func) ();
 {
-  dict_type *new = newentry (name);
-  add_to_definition (new, func);
-  add_to_definition (new, 0);
+  dict_type *new_d = newentry (name);
+  add_to_definition (new_d, func);
+  add_to_definition (new_d, 0);
 }
 
 void
 add_var (name)
      char *name;
 {
-  dict_type *new = newentry (name);
-  add_to_definition (new, push_number);
-  add_to_definition (new, (stinst_type) (&(new->var)));
-  add_to_definition (new, 0);
+  dict_type *new_d = newentry (name);
+  add_to_definition (new_d, push_number);
+  add_to_definition (new_d, (stinst_type) (&(new_d->var)));
+  add_to_definition (new_d, 0);
 }
 
 void

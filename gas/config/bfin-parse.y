@@ -1,5 +1,5 @@
 /* bfin-parse.y  ADI Blackfin parser
-   Copyright 2005, 2006, 2007
+   Copyright 2005, 2006, 2007, 2008, 2009
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -23,7 +23,7 @@
 #include "as.h"
 #include <obstack.h>
 
-#include "bfin-aux.h"  // opcode generating auxiliaries
+#include "bfin-aux.h"  /* Opcode generating auxiliaries.  */
 #include "libbfd.h"
 #include "elf/common.h"
 #include "elf/bfin.h"
@@ -169,13 +169,13 @@ int yyerror (char *msg);
 void error (char *format, ...)
 {
     va_list ap;
-    char buffer[2000];
+    static char buffer[2000];
     
     va_start (ap, format);
     vsprintf (buffer, format, ap);
     va_end (ap);
 
-    as_bad (buffer);
+    as_bad ("%s", buffer);
 }
 
 int
@@ -222,12 +222,6 @@ extern int yylex (void);
 
 /* Auxiliary functions.  */
 
-static void
-neg_value (Expr_Node *expr)
-{
-  expr->value.i_value = -expr->value.i_value;
-}
-
 static int
 valid_dreg_pair (Register *reg1, Expr_Node *reg2)
 {
@@ -264,6 +258,29 @@ check_multiply_halfregs (Macfunc *aa, Macfunc *ab)
 }
 
 
+/* Check mac option.  */
+
+static int
+check_macfunc_option (Macfunc *a, Opt_mode *opt)
+{
+  /* Default option is always valid.  */
+  if (opt->mod == 0)
+    return 0;
+
+  if ((a->w == 1 && a->P == 1
+       && opt->mod != M_FU && opt->mod != M_IS && opt->mod != M_IU
+       && opt->mod != M_S2RND && opt->mod != M_ISS2)
+      || (a->w == 1 && a->P == 0
+	  && opt->mod != M_FU && opt->mod != M_IS && opt->mod != M_IU
+	  && opt->mod != M_T && opt->mod != M_TFU && opt->mod != M_S2RND
+	  && opt->mod != M_ISS2 && opt->mod != M_IH)
+      || (a->w == 0 && a->P == 0
+	  && opt->mod != M_FU && opt->mod != M_IS && opt->mod != M_W32))
+    return -1;
+
+  return 0;
+}
+
 /* Check (vector) mac funcs and ops.  */
 
 static int
@@ -273,6 +290,11 @@ check_macfuncs (Macfunc *aa, Opt_mode *opa,
   /* Variables for swapping.  */
   Macfunc mtmp;
   Opt_mode otmp;
+
+  /* The option mode should be put at the end of the second instruction
+     of the vector except M, which should follow MAC1 instruction.  */
+  if (opa->mod != 0)
+    return yyerror ("Bad opt mode");
 
   /* If a0macfunc comes before a1macfunc, swap them.  */
 	
@@ -291,16 +313,14 @@ check_macfuncs (Macfunc *aa, Opt_mode *opa,
     {
       if (opb->MM != 0)
 	return yyerror ("(M) not allowed with A0MAC");
-      if (opa->mod != 0)
-	return yyerror ("Bad opt mode");
       if (ab->n != 0)
 	return yyerror ("Vector AxMACs can't be same");
     }
 
   /*  If both ops are one of 0, 1, or 2, we have multiply_halfregs in both
   assignment_or_macfuncs.  */
-  if (aa->op < 3 && aa->op >=0
-      && ab->op < 3 && ab->op >= 0)
+  if ((aa->op == 0 || aa->op == 1 || aa->op == 2)
+      && (ab->op == 0 || ab->op == 1 || ab->op == 2))
     {
       if (check_multiply_halfregs (aa, ab) < 0)
 	return -1;
@@ -321,20 +341,18 @@ check_macfuncs (Macfunc *aa, Opt_mode *opa,
       if (aa->w && (aa->dst.regno - ab->dst.regno != 1))
 	return yyerror ("Destination Dregs must differ by one");
     }
-  /* We assign to full regs, thus obey even/odd rules.  */
-  else if ((aa->w && aa->P && IS_EVEN (aa->dst)) 
-	   || (ab->w && ab->P && !IS_EVEN (ab->dst)))
-    return yyerror ("Even/Odd register assignment mismatch");
-  /* We assign to half regs, thus obey hi/low rules.  */
-  else if ( (aa->w && !aa->P && !IS_H (aa->dst)) 
-	    || (ab->w && !aa->P && IS_H (ab->dst)))
-    return yyerror ("High/Low register assignment mismatch");
+
+  /* Make sure mod flags get ORed, too.  */
+  opb->mod |= opa->mod;
+
+  /* Check option.  */
+  if (check_macfunc_option (aa, opb) < 0
+      && check_macfunc_option (ab, opb) < 0)
+    return yyerror ("bad option");
 
   /* Make sure first macfunc has got both P flags ORed.  */
   aa->P |= ab->P;
 
-  /* Make sure mod flags get ORed, too.  */
-  opb->mod |= opa->mod;
   return 0;	
 }
 
@@ -359,6 +377,29 @@ is_group2 (INSTR_T x)
       || (x->value == 0x0000))
     return 1;
   return 0;
+}
+
+static INSTR_T
+gen_multi_instr_1 (INSTR_T dsp32, INSTR_T dsp16_grp1, INSTR_T dsp16_grp2)
+{
+  int mask1 = dsp32 ? insn_regmask (dsp32->value, dsp32->next->value) : 0;
+  int mask2 = dsp16_grp1 ? insn_regmask (dsp16_grp1->value, 0) : 0;
+  int mask3 = dsp16_grp2 ? insn_regmask (dsp16_grp2->value, 0) : 0;
+
+  if ((mask1 & mask2) || (mask1 & mask3) || (mask2 & mask3))
+    yyerror ("resource conflict in multi-issue instruction");
+
+  /* Anomaly 05000074 */
+  if (ENABLE_AC_05000074
+      && dsp32 != NULL && dsp16_grp1 != NULL
+      && (dsp32->value & 0xf780) == 0xc680
+      && ((dsp16_grp1->value & 0xfe40) == 0x9240
+	  || (dsp16_grp1->value & 0xfe08) == 0xba08
+	  || (dsp16_grp1->value & 0xfc00) == 0xbc00))
+    yyerror ("anomaly 05000074 - Multi-Issue Instruction with \
+dsp32shiftimm in slot1 and P-reg Store in slot2 Not Supported");
+
+  return bfin_gen_multi_instr (dsp32, dsp16_grp1, dsp16_grp2);
 }
 
 %}
@@ -505,7 +546,7 @@ is_group2 (INSTR_T x)
 %type <reg> a_minusassign
 %type <macfunc> multiply_halfregs
 %type <macfunc> assign_macfunc 
-%type <macfunc> a_macfunc 
+%type <macfunc> a_macfunc
 %type <expr> expr_1
 %type <instr> asm_1
 %type <r0> vmod
@@ -584,27 +625,27 @@ asm: asm_1 SEMICOLON
 	  if (($1->value & 0xf800) == 0xc000)
 	    {
 	      if (is_group1 ($3) && is_group2 ($5))
-		$$ = bfin_gen_multi_instr ($1, $3, $5);
+		$$ = gen_multi_instr_1 ($1, $3, $5);
 	      else if (is_group2 ($3) && is_group1 ($5))
-		$$ = bfin_gen_multi_instr ($1, $5, $3);
+		$$ = gen_multi_instr_1 ($1, $5, $3);
 	      else
 		return yyerror ("Wrong 16 bit instructions groups, slot 2 and slot 3 must be 16-bit instrution group");
 	    }
 	  else if (($3->value & 0xf800) == 0xc000)
 	    {
 	      if (is_group1 ($1) && is_group2 ($5))
-		$$ = bfin_gen_multi_instr ($3, $1, $5);
+		$$ = gen_multi_instr_1 ($3, $1, $5);
 	      else if (is_group2 ($1) && is_group1 ($5))
-		$$ = bfin_gen_multi_instr ($3, $5, $1);
+		$$ = gen_multi_instr_1 ($3, $5, $1);
 	      else
 		return yyerror ("Wrong 16 bit instructions groups, slot 1 and slot 3 must be 16-bit instrution group");
 	    }
 	  else if (($5->value & 0xf800) == 0xc000)
 	    {
 	      if (is_group1 ($1) && is_group2 ($3))
-		$$ = bfin_gen_multi_instr ($5, $1, $3);
+		$$ = gen_multi_instr_1 ($5, $1, $3);
 	      else if (is_group2 ($1) && is_group1 ($3))
-		$$ = bfin_gen_multi_instr ($5, $3, $1);
+		$$ = gen_multi_instr_1 ($5, $3, $1);
 	      else
 		return yyerror ("Wrong 16 bit instructions groups, slot 1 and slot 2 must be 16-bit instrution group");
 	    }
@@ -617,25 +658,25 @@ asm: asm_1 SEMICOLON
 	  if (($1->value & 0xf800) == 0xc000)
 	    {
 	      if (is_group1 ($3))
-		$$ = bfin_gen_multi_instr ($1, $3, 0);
+		$$ = gen_multi_instr_1 ($1, $3, 0);
 	      else if (is_group2 ($3))
-		$$ = bfin_gen_multi_instr ($1, 0, $3);
+		$$ = gen_multi_instr_1 ($1, 0, $3);
 	      else
 		return yyerror ("Wrong 16 bit instructions groups, slot 2 must be the 16-bit instruction group");
 	    }
 	  else if (($3->value & 0xf800) == 0xc000)
 	    {
 	      if (is_group1 ($1))
-		$$ = bfin_gen_multi_instr ($3, $1, 0);
+		$$ = gen_multi_instr_1 ($3, $1, 0);
 	      else if (is_group2 ($1))
-		$$ = bfin_gen_multi_instr ($3, 0, $1);
+		$$ = gen_multi_instr_1 ($3, 0, $1);
 	      else
 		return yyerror ("Wrong 16 bit instructions groups, slot 1 must be the 16-bit instruction group");
 	    }
 	  else if (is_group1 ($1) && is_group2 ($3))
-	      $$ = bfin_gen_multi_instr (0, $1, $3);
+	      $$ = gen_multi_instr_1 (0, $1, $3);
 	  else if (is_group2 ($1) && is_group1 ($3))
-	    $$ = bfin_gen_multi_instr (0, $3, $1);
+	    $$ = gen_multi_instr_1 (0, $3, $1);
 	  else
 	    return yyerror ("Wrong 16 bit instructions groups, slot 1 and slot 2 must be the 16-bit instruction group");
 	}
@@ -659,6 +700,9 @@ asm_1:
 	  int op0, op1;
 	  int w0 = 0, w1 = 0;
 	  int h00, h10, h01, h11;
+
+	  if (check_macfunc_option (&$1, &$2) < 0)
+	    return yyerror ("bad option");
 
 	  if ($1.n == 0)
 	    {
@@ -763,7 +807,7 @@ asm_1:
 	| LPAREN REG COMMA REG RPAREN ASSIGN BYTEOP16M LPAREN REG COLON expr COMMA
 	  REG COLON expr RPAREN aligndir 
 	{
-	  if (!IS_DREG ($2) || !IS_DREG($4))
+	  if (!IS_DREG ($2) || !IS_DREG ($4))
 	    return yyerror ("Dregs expected");
 	  else if (!valid_dreg_pair (&$9, $11))
 	    return yyerror ("Bad dreg pair");
@@ -1432,6 +1476,8 @@ asm_1:
 	      notethat ("COMPI2opD: dregs += imm7\n");
 	      $$ = COMPI2OPD (&$1, imm7 ($3), 1);
 	    }
+	  else if ((IS_DREG ($1) || IS_PREG ($1)) && IS_CONST ($3))
+	    return yyerror ("Immediate value out of range");
 	  else
 	    return yyerror ("Register mismatch");
 	}
@@ -1552,36 +1598,40 @@ asm_1:
 	}
 	| CCREG ASSIGN REG_A _ASSIGN_ASSIGN REG_A
 	{
-	  if (!REG_SAME ($3, $5))
+	  if ($3.regno == REG_A0 && $5.regno == REG_A1)
 	    {
 	      notethat ("CCflag: CC = A0 == A1\n");
 	      $$ = CCFLAG (0, 0, 5, 0, 0);
 	    }
 	  else
-	    return yyerror ("CC register expected");
+	    return yyerror ("AREGs are in bad order or same");
 	}
 	| CCREG ASSIGN REG_A LESS_THAN REG_A
 	{
-	  if (!REG_SAME ($3, $5))
+	  if ($3.regno == REG_A0 && $5.regno == REG_A1)
 	    {
 	      notethat ("CCflag: CC = A0 < A1\n");
 	      $$ = CCFLAG (0, 0, 6, 0, 0);
 	    }
 	  else
-	    return yyerror ("Register mismatch");
+	    return yyerror ("AREGs are in bad order or same");
 	}
 	| CCREG ASSIGN REG LESS_THAN REG iu_or_nothing
 	{
-	  if (REG_CLASS($3) == REG_CLASS($5))
+	  if ((IS_DREG ($3) && IS_DREG ($5))
+	      || (IS_PREG ($3) && IS_PREG ($5)))
 	    {
 	      notethat ("CCflag: CC = dpregs < dpregs\n");
 	      $$ = CCFLAG (&$3, $5.regno & CODE_MASK, $6.r0, 0, IS_PREG ($3) ? 1 : 0);
 	    }
 	  else
-	    return yyerror ("Compare only of same register class");
+	    return yyerror ("Bad register in comparison");
 	}
 	| CCREG ASSIGN REG LESS_THAN expr iu_or_nothing
 	{
+	  if (!IS_DREG ($3) && !IS_PREG ($3))
+	    return yyerror ("Bad register in comparison");
+
 	  if (($6.r0 == 1 && IS_IMM ($5, 3))
 	      || ($6.r0 == 3 && IS_UIMM ($5, 3)))
 	    {
@@ -1593,14 +1643,20 @@ asm_1:
 	}
 	| CCREG ASSIGN REG _ASSIGN_ASSIGN REG
 	{
-	  if (REG_CLASS($3) == REG_CLASS($5))
+	  if ((IS_DREG ($3) && IS_DREG ($5))
+	      || (IS_PREG ($3) && IS_PREG ($5)))
 	    {
 	      notethat ("CCflag: CC = dpregs == dpregs\n");
 	      $$ = CCFLAG (&$3, $5.regno & CODE_MASK, 0, 0, IS_PREG ($3) ? 1 : 0);
-	    } 
+	    }
+	  else
+	    return yyerror ("Bad register in comparison");
 	}
 	| CCREG ASSIGN REG _ASSIGN_ASSIGN expr
 	{
+	  if (!IS_DREG ($3) && !IS_PREG ($3))
+	    return yyerror ("Bad register in comparison");
+
 	  if (IS_IMM ($5, 3))
 	    {
 	      notethat ("CCflag: CC = dpregs == imm3\n");
@@ -1611,44 +1667,36 @@ asm_1:
 	}
 	| CCREG ASSIGN REG_A _LESS_THAN_ASSIGN REG_A
 	{
-	  if (!REG_SAME ($3, $5))
+	  if ($3.regno == REG_A0 && $5.regno == REG_A1)
 	    {
 	      notethat ("CCflag: CC = A0 <= A1\n");
 	      $$ = CCFLAG (0, 0, 7, 0, 0);
 	    }
 	  else
-	    return yyerror ("CC register expected");
+	    return yyerror ("AREGs are in bad order or same");
 	}
 	| CCREG ASSIGN REG _LESS_THAN_ASSIGN REG iu_or_nothing
 	{
-	  if (REG_CLASS($3) == REG_CLASS($5))
+	  if ((IS_DREG ($3) && IS_DREG ($5))
+	      || (IS_PREG ($3) && IS_PREG ($5)))
 	    {
-	      notethat ("CCflag: CC = pregs <= pregs (..)\n");
+	      notethat ("CCflag: CC = dpregs <= dpregs (..)\n");
 	      $$ = CCFLAG (&$3, $5.regno & CODE_MASK,
 			   1 + $6.r0, 0, IS_PREG ($3) ? 1 : 0);
 	    }
 	  else
-	    return yyerror ("Compare only of same register class");
+	    return yyerror ("Bad register in comparison");
 	}
 	| CCREG ASSIGN REG _LESS_THAN_ASSIGN expr iu_or_nothing
 	{
+	  if (!IS_DREG ($3) && !IS_PREG ($3))
+	    return yyerror ("Bad register in comparison");
+
 	  if (($6.r0 == 1 && IS_IMM ($5, 3))
 	      || ($6.r0 == 3 && IS_UIMM ($5, 3)))
 	    {
-	      if (IS_DREG ($3))
-		{
-		  notethat ("CCflag: CC = dregs <= (u)imm3\n");
-		  /*    x       y     opc     I     G   */
-		  $$ = CCFLAG (&$3, imm3 ($5), 1 + $6.r0, 1, 0);
-		}
-	      else if (IS_PREG ($3))
-		{
-		  notethat ("CCflag: CC = pregs <= (u)imm3\n");
-		  /*    x       y     opc     I     G   */
-		  $$ = CCFLAG (&$3, imm3 ($5), 1 + $6.r0, 1, 1);
-		}
-	      else
-		return yyerror ("Dreg or Preg expected");
+	      notethat ("CCflag: CC = dpregs <= (u)imm3\n");
+	      $$ = CCFLAG (&$3, imm3 ($5), 1 + $6.r0, 1, IS_PREG ($3) ? 1 : 0);
 	    }
 	  else
 	    return yyerror ("Bad constant value");
@@ -1673,9 +1721,18 @@ asm_1:
 
 	| REG ASSIGN REG
 	{
-	  if (IS_ALLREG ($1) && IS_ALLREG ($3))
+	  if ((IS_GENREG ($1) && IS_GENREG ($3))
+	      || (IS_GENREG ($1) && IS_DAGREG ($3))
+	      || (IS_DAGREG ($1) && IS_GENREG ($3))
+	      || (IS_DAGREG ($1) && IS_DAGREG ($3))
+	      || (IS_GENREG ($1) && $3.regno == REG_USP)
+	      || ($1.regno == REG_USP && IS_GENREG ($3))
+	      || (IS_DREG ($1) && IS_SYSREG ($3))
+	      || (IS_PREG ($1) && IS_SYSREG ($3))
+	      || (IS_SYSREG ($1) && IS_DREG ($3))
+	      || (IS_SYSREG ($1) && IS_PREG ($3))
+	      || (IS_SYSREG ($1) && $3.regno == REG_USP))
 	    {
-	      notethat ("REGMV: allregs = allregs\n");
 	      $$ = bfin_gen_regmv (&$3, &$1);
 	    }
 	  else
@@ -1719,6 +1776,11 @@ asm_1:
 	  if (!IS_H ($1) && $4.MM)
 	    return yyerror ("(M) not allowed with MAC0");
 
+	  if ($4.mod != 0 && $4.mod != M_FU && $4.mod != M_IS
+	      && $4.mod != M_IU && $4.mod != M_T && $4.mod != M_TFU
+	      && $4.mod != M_S2RND && $4.mod != M_ISS2 && $4.mod != M_IH)
+	    return yyerror ("bad option.");
+
 	  if (IS_H ($1))
 	    {
 	      $$ = DSP32MULT (0, $4.MM, $4.mod, 1, 0,
@@ -1741,6 +1803,10 @@ asm_1:
 
 	  if (IS_EVEN ($1) && $4.MM)
 	    return yyerror ("(M) not allowed with MAC0");
+
+	  if ($4.mod != 0 && $4.mod != M_FU && $4.mod != M_IS
+	      && $4.mod != M_S2RND && $4.mod != M_ISS2)
+	    return yyerror ("bad option");
 
 	  if (!IS_EVEN ($1))
 	    {
@@ -1892,22 +1958,20 @@ asm_1:
 	  else
 	    return yyerror ("Bad shift value or register");
 	}
-	| HALF_REG ASSIGN HALF_REG LESS_LESS expr
-	{
-	  if (IS_UIMM ($5, 4))
-	    {
-	      notethat ("dsp32shiftimm: dregs_half = dregs_half << uimm4\n");
-	      $$ = DSP32SHIFTIMM (0x0, &$1, imm5 ($5), &$3, 2, HL2 ($1, $3));
-	    }
-	  else
-	    return yyerror ("Bad shift value");
-	}
 	| HALF_REG ASSIGN HALF_REG LESS_LESS expr smod 
 	{
 	  if (IS_UIMM ($5, 4))
 	    {
-	      notethat ("dsp32shiftimm: dregs_half = dregs_half << uimm4\n");
-	      $$ = DSP32SHIFTIMM (0x0, &$1, imm5 ($5), &$3, $6.s0, HL2 ($1, $3));
+	      if ($6.s0)
+		{
+		  notethat ("dsp32shiftimm: dregs_half = dregs_half << uimm4 (S)\n");
+		  $$ = DSP32SHIFTIMM (0x0, &$1, imm5 ($5), &$3, $6.s0, HL2 ($1, $3));
+		}
+	      else
+		{
+		  notethat ("dsp32shiftimm: dregs_half = dregs_half << uimm4\n");
+		  $$ = DSP32SHIFTIMM (0x0, &$1, imm5 ($5), &$3, 2, HL2 ($1, $3));
+		}
 	    }
 	  else
 	    return yyerror ("Bad shift value");
@@ -2883,76 +2947,105 @@ asm_1:
 
 	| B LBRACK REG post_op RBRACK ASSIGN REG
 	{
-	  if (IS_PREG ($3) && IS_DREG ($7))
-	    {
-	      notethat ("LDST: B [ pregs <post_op> ] = dregs\n");
-	      $$ = LDST (&$3, &$7, $4.x0, 2, 0, 1);
-	    }
-	  else
-	    return yyerror ("Register mismatch");
+	  if (!IS_DREG ($7))
+	    return yyerror ("Dreg expected for source operand");
+	  if (!IS_PREG ($3))
+	    return yyerror ("Preg expected in address");
+
+	  notethat ("LDST: B [ pregs <post_op> ] = dregs\n");
+	  $$ = LDST (&$3, &$7, $4.x0, 2, 0, 1);
 	}
 
 /* LDSTidxI:	B [ pregs + imm16 ] = dregs.  */
 	| B LBRACK REG plus_minus expr RBRACK ASSIGN REG
 	{
-	  if (IS_PREG ($3) && IS_RANGE(16, $5, $4.r0, 1) && IS_DREG ($8))
+	  Expr_Node *tmp = $5;
+
+	  if (!IS_DREG ($8))
+	    return yyerror ("Dreg expected for source operand");
+	  if (!IS_PREG ($3))
+	    return yyerror ("Preg expected in address");
+
+	  if (IS_RELOC ($5))
+	    return yyerror ("Plain symbol used as offset");
+
+	  if ($4.r0)
+	    tmp = unary (Expr_Op_Type_NEG, tmp);
+	    
+	  if (in_range_p (tmp, -32768, 32767, 0))
 	    {
 	      notethat ("LDST: B [ pregs + imm16 ] = dregs\n");
-	      if ($4.r0)
-		neg_value ($5);
 	      $$ = LDSTIDXI (&$3, &$8, 1, 2, 0, $5);
 	    }
 	  else
-	    return yyerror ("Register mismatch or const size wrong");
+	    return yyerror ("Displacement out of range");
 	}
 
 
 /* LDSTii:	W [ pregs + uimm4s2 ] = dregs.  */
 	| W LBRACK REG plus_minus expr RBRACK ASSIGN REG
 	{
-	  if (IS_PREG ($3) && IS_URANGE (4, $5, $4.r0, 2) && IS_DREG ($8))
+	  Expr_Node *tmp = $5;
+
+	  if (!IS_DREG ($8))
+	    return yyerror ("Dreg expected for source operand");
+	  if (!IS_PREG ($3))
+	    return yyerror ("Preg expected in address");
+	  
+	  if ($4.r0)
+	    tmp = unary (Expr_Op_Type_NEG, tmp);
+
+	  if (IS_RELOC ($5))
+	    return yyerror ("Plain symbol used as offset");
+
+	  if (in_range_p (tmp, 0, 30, 1))
 	    {
 	      notethat ("LDSTii: W [ pregs +- uimm5m2 ] = dregs\n");
-	      $$ = LDSTII (&$3, &$8, $5, 1, 1);
+	      $$ = LDSTII (&$3, &$8, tmp, 1, 1);
 	    }
-	  else if (IS_PREG ($3) && IS_RANGE(16, $5, $4.r0, 2) && IS_DREG ($8))
+	  else if (in_range_p (tmp, -65536, 65535, 1))
 	    {
 	      notethat ("LDSTidxI: W [ pregs + imm17m2 ] = dregs\n");
-	      if ($4.r0)
-		neg_value ($5);
-	      $$ = LDSTIDXI (&$3, &$8, 1, 1, 0, $5);
+	      $$ = LDSTIDXI (&$3, &$8, 1, 1, 0, tmp);
 	    }
 	  else
-	    return yyerror ("Bad register(s) or wrong constant size");
+	    return yyerror ("Displacement out of range");
 	}
 
 /* LDST:	W [ pregs <post_op> ] = dregs.  */
 	| W LBRACK REG post_op RBRACK ASSIGN REG
 	{
-	  if (IS_PREG ($3) && IS_DREG ($7))
-	    {
-	      notethat ("LDST: W [ pregs <post_op> ] = dregs\n");
-	      $$ = LDST (&$3, &$7, $4.x0, 1, 0, 1);
-	    }
-	  else
-	    return yyerror ("Bad register(s) for STORE");
+	  if (!IS_DREG ($7))
+	    return yyerror ("Dreg expected for source operand");
+	  if (!IS_PREG ($3))
+	    return yyerror ("Preg expected in address");
+
+	  notethat ("LDST: W [ pregs <post_op> ] = dregs\n");
+	  $$ = LDST (&$3, &$7, $4.x0, 1, 0, 1);
 	}
 
 	| W LBRACK REG post_op RBRACK ASSIGN HALF_REG
 	{
+	  if (!IS_DREG ($7))
+	    return yyerror ("Dreg expected for source operand");
+	  if ($4.x0 == 2)
+	    {
+	      if (!IS_IREG ($3) && !IS_PREG ($3))
+		return yyerror ("Ireg or Preg expected in address");
+	    }
+	  else if (!IS_IREG ($3))
+	    return yyerror ("Ireg expected in address");
+
 	  if (IS_IREG ($3))
 	    {
 	      notethat ("dspLDST: W [ iregs <post_op> ] = dregs_half\n");
 	      $$ = DSPLDST (&$3, 1 + IS_H ($7), &$7, $4.x0, 1);
 	    }
-	  else if ($4.x0 == 2 && IS_PREG ($3) && IS_DREG ($7))
-	    {
-	      notethat ("LDSTpmod: W [ pregs <post_op>] = dregs_half\n");
-	      $$ = LDSTPMOD (&$3, &$7, &$3, 1 + IS_H ($7), 1);
-	      
-	    }
 	  else
-	    return yyerror ("Bad register(s) for STORE");
+	    {
+	      notethat ("LDSTpmod: W [ pregs ] = dregs_half\n");
+	      $$ = LDSTPMOD (&$3, &$7, &$3, 1 + IS_H ($7), 1);
+	    }
 	}
 
 /* LDSTiiFP:	[ FP - const ] = dpregs.  */
@@ -2962,13 +3055,16 @@ asm_1:
 	  int ispreg = IS_PREG ($7);
 
 	  if (!IS_PREG ($2))
-	    return yyerror ("Preg expected for indirect");
+	    return yyerror ("Preg expected in address");
 
 	  if (!IS_DREG ($7) && !ispreg)
-	    return yyerror ("Bad source register for STORE");
+	    return yyerror ("Preg expected for source operand");
 
 	  if ($3.r0)
 	    tmp = unary (Expr_Op_Type_NEG, tmp);
+
+	  if (IS_RELOC ($4))
+	    return yyerror ("Plain symbol used as offset");
 
 	  if (in_range_p (tmp, 0, 63, 3))
 	    {
@@ -2984,105 +3080,128 @@ asm_1:
 	  else if (in_range_p (tmp, -131072, 131071, 3))
 	    {
 	      notethat ("LDSTidxI: [ pregs + imm18m4 ] = dpregs\n");
-	      $$ = LDSTIDXI (&$2, &$7, 1, 0, ispreg ? 1: 0, tmp);
+	      $$ = LDSTIDXI (&$2, &$7, 1, 0, ispreg ? 1 : 0, tmp);
 	    }
 	  else
-	    return yyerror ("Displacement out of range for store");
+	    return yyerror ("Displacement out of range");
 	}
 
 	| REG ASSIGN W LBRACK REG plus_minus expr RBRACK xpmod
 	{
-	  if (IS_DREG ($1) && IS_PREG ($5) && IS_URANGE (4, $7, $6.r0, 2))
+	  Expr_Node *tmp = $7;
+	  if (!IS_DREG ($1))
+	    return yyerror ("Dreg expected for destination operand");
+	  if (!IS_PREG ($5))
+	    return yyerror ("Preg expected in address");
+
+	  if ($6.r0)
+	    tmp = unary (Expr_Op_Type_NEG, tmp);
+
+	  if (IS_RELOC ($7))
+	    return yyerror ("Plain symbol used as offset");
+
+	  if (in_range_p (tmp, 0, 30, 1))
 	    {
-	      notethat ("LDSTii: dregs = W [ pregs + uimm4s2 ] (.)\n");
-	      $$ = LDSTII (&$5, &$1, $7, 0, 1 << $9.r0);
+	      notethat ("LDSTii: dregs = W [ pregs + uimm5m2 ] (.)\n");
+	      $$ = LDSTII (&$5, &$1, tmp, 0, 1 << $9.r0);
 	    }
-	  else if (IS_DREG ($1) && IS_PREG ($5) && IS_RANGE(16, $7, $6.r0, 2))
+	  else if (in_range_p (tmp, -65536, 65535, 1))
 	    {
 	      notethat ("LDSTidxI: dregs = W [ pregs + imm17m2 ] (.)\n");
-	      if ($6.r0)
-		neg_value ($7);
-	      $$ = LDSTIDXI (&$5, &$1, 0, 1, $9.r0, $7);
+	      $$ = LDSTIDXI (&$5, &$1, 0, 1, $9.r0, tmp);
 	    }
 	  else
-	    return yyerror ("Bad register or constant for LOAD");
+	    return yyerror ("Displacement out of range");
 	}	
 
 	| HALF_REG ASSIGN W LBRACK REG post_op RBRACK
 	{
+	  if (!IS_DREG ($1))
+	    return yyerror ("Dreg expected for source operand");
+	  if ($6.x0 == 2)
+	    {
+	      if (!IS_IREG ($5) && !IS_PREG ($5))
+		return yyerror ("Ireg or Preg expected in address");
+	    }
+	  else if (!IS_IREG ($5))
+	    return yyerror ("Ireg expected in address");
+
 	  if (IS_IREG ($5))
 	    {
-	      notethat ("dspLDST: dregs_half = W [ iregs ]\n");
+	      notethat ("dspLDST: dregs_half = W [ iregs <post_op> ]\n");
 	      $$ = DSPLDST(&$5, 1 + IS_H ($1), &$1, $6.x0, 0);
 	    }
-	  else if ($6.x0 == 2 && IS_DREG ($1) && IS_PREG ($5))
+	  else
 	    {
-	      notethat ("LDSTpmod: dregs_half = W [ pregs ]\n");
+	      notethat ("LDSTpmod: dregs_half = W [ pregs <post_op> ]\n");
 	      $$ = LDSTPMOD (&$5, &$1, &$5, 1 + IS_H ($1), 0);
 	    }
-	  else
-	    return yyerror ("Bad register or post_op for LOAD");
 	}
 
 
 	| REG ASSIGN W LBRACK REG post_op RBRACK xpmod
 	{
-	  if (IS_DREG ($1) && IS_PREG ($5))
-	    {
-	      notethat ("LDST: dregs = W [ pregs <post_op> ] (.)\n");
-	      $$ = LDST (&$5, &$1, $6.x0, 1, $8.r0, 0);
-	    }
-	  else
-	    return yyerror ("Bad register for LOAD");
+	  if (!IS_DREG ($1))
+	    return yyerror ("Dreg expected for destination operand");
+	  if (!IS_PREG ($5))
+	    return yyerror ("Preg expected in address");
+
+	  notethat ("LDST: dregs = W [ pregs <post_op> ] (.)\n");
+	  $$ = LDST (&$5, &$1, $6.x0, 1, $8.r0, 0);
 	}
 
 	| REG ASSIGN W LBRACK REG _PLUS_PLUS REG RBRACK xpmod
 	{
-	  if (IS_DREG ($1) && IS_PREG ($5) && IS_PREG ($7))
-	    {
-	      notethat ("LDSTpmod: dregs = W [ pregs ++ pregs ] (.)\n");
-	      $$ = LDSTPMOD (&$5, &$1, &$7, 3, $9.r0);
-	    }
-	  else
-	    return yyerror ("Bad register for LOAD");
+	  if (!IS_DREG ($1))
+	    return yyerror ("Dreg expected for destination operand");
+	  if (!IS_PREG ($5) || !IS_PREG ($7))
+	    return yyerror ("Preg expected in address");
+
+	  notethat ("LDSTpmod: dregs = W [ pregs ++ pregs ] (.)\n");
+	  $$ = LDSTPMOD (&$5, &$1, &$7, 3, $9.r0);
 	}
 
 	| HALF_REG ASSIGN W LBRACK REG _PLUS_PLUS REG RBRACK
 	{
-	  if (IS_DREG ($1) && IS_PREG ($5) && IS_PREG ($7))
-	    {
-	      notethat ("LDSTpmod: dregs_half = W [ pregs ++ pregs ]\n");
-	      $$ = LDSTPMOD (&$5, &$1, &$7, 1 + IS_H ($1), 0);
-	    }
-	  else
-	    return yyerror ("Bad register for LOAD");
+	  if (!IS_DREG ($1))
+	    return yyerror ("Dreg expected for destination operand");
+	  if (!IS_PREG ($5) || !IS_PREG ($7))
+	    return yyerror ("Preg expected in address");
+
+	  notethat ("LDSTpmod: dregs_half = W [ pregs ++ pregs ]\n");
+	  $$ = LDSTPMOD (&$5, &$1, &$7, 1 + IS_H ($1), 0);
 	}
 
 	| LBRACK REG post_op RBRACK ASSIGN REG
 	{
-	  if (IS_IREG ($2) && IS_DREG ($6))
+	  if (!IS_IREG ($2) && !IS_PREG ($2))
+	    return yyerror ("Ireg or Preg expected in address");
+	  else if (IS_IREG ($2) && !IS_DREG ($6))
+	    return yyerror ("Dreg expected for source operand");
+	  else if (IS_PREG ($2) && !IS_DREG ($6) && !IS_PREG ($6))
+	    return yyerror ("Dreg or Preg expected for source operand");
+
+	  if (IS_IREG ($2))
 	    {
 	      notethat ("dspLDST: [ iregs <post_op> ] = dregs\n");
 	      $$ = DSPLDST(&$2, 0, &$6, $3.x0, 1);
 	    }
-	  else if (IS_PREG ($2) && IS_DREG ($6))
+	  else if (IS_DREG ($6))
 	    {
 	      notethat ("LDST: [ pregs <post_op> ] = dregs\n");
 	      $$ = LDST (&$2, &$6, $3.x0, 0, 0, 1);
 	    }
-	  else if (IS_PREG ($2) && IS_PREG ($6))
+	  else
 	    {
 	      notethat ("LDST: [ pregs <post_op> ] = pregs\n");
 	      $$ = LDST (&$2, &$6, $3.x0, 0, 1, 1);
 	    }
-	  else
-	    return yyerror ("Bad register for STORE");
 	}
 
 	| LBRACK REG _PLUS_PLUS REG RBRACK ASSIGN REG
 	{
-	  if (! IS_DREG ($7))
-	    return yyerror ("Expected Dreg for last argument");
+	  if (!IS_DREG ($7))
+	    return yyerror ("Dreg expected for source operand");
 
 	  if (IS_IREG ($2) && IS_MREG ($4))
 	    {
@@ -3095,62 +3214,76 @@ asm_1:
 	      $$ = LDSTPMOD (&$2, &$7, &$4, 0, 1);
 	    }
 	  else
-	    return yyerror ("Bad register for STORE");
+	    return yyerror ("Preg ++ Preg or Ireg ++ Mreg expected in address");
 	}
 			
 	| W LBRACK REG _PLUS_PLUS REG RBRACK ASSIGN HALF_REG
 	{
 	  if (!IS_DREG ($8))
-	    return yyerror ("Expect Dreg as last argument");
+	    return yyerror ("Dreg expected for source operand");
+
 	  if (IS_PREG ($3) && IS_PREG ($5))
 	    {
 	      notethat ("LDSTpmod: W [ pregs ++ pregs ] = dregs_half\n");
 	      $$ = LDSTPMOD (&$3, &$8, &$5, 1 + IS_H ($8), 1);
 	    }
 	  else
-	    return yyerror ("Bad register for STORE");
+	    return yyerror ("Preg ++ Preg expected in address");
 	}
 
 	| REG ASSIGN B LBRACK REG plus_minus expr RBRACK xpmod
 	{
-	  if (IS_DREG ($1) && IS_PREG ($5) && IS_RANGE(16, $7, $6.r0, 1))
+	  Expr_Node *tmp = $7;
+	  if (!IS_DREG ($1))
+	    return yyerror ("Dreg expected for destination operand");
+	  if (!IS_PREG ($5))
+	    return yyerror ("Preg expected in address");
+
+	  if ($6.r0)
+	    tmp = unary (Expr_Op_Type_NEG, tmp);
+
+	  if (IS_RELOC ($7))
+	    return yyerror ("Plain symbol used as offset");
+
+	  if (in_range_p (tmp, -32768, 32767, 0))
 	    {
 	      notethat ("LDSTidxI: dregs = B [ pregs + imm16 ] (%c)\n",
 		       $9.r0 ? 'X' : 'Z');
-	      if ($6.r0)
-		neg_value ($7);
-	      $$ = LDSTIDXI (&$5, &$1, 0, 2, $9.r0, $7);
+	      $$ = LDSTIDXI (&$5, &$1, 0, 2, $9.r0, tmp);
 	    }
 	  else
-	    return yyerror ("Bad register or value for LOAD");
+	    return yyerror ("Displacement out of range");
 	}
 
 	| REG ASSIGN B LBRACK REG post_op RBRACK xpmod
 	{
-	  if (IS_DREG ($1) && IS_PREG ($5))
-	    {
-	      notethat ("LDST: dregs = B [ pregs <post_op> ] (%c)\n",
-		       $8.r0 ? 'X' : 'Z');
-	      $$ = LDST (&$5, &$1, $6.x0, 2, $8.r0, 0);
-	    }
-	  else
-	    return yyerror ("Bad register for LOAD");
+	  if (!IS_DREG ($1))
+	    return yyerror ("Dreg expected for destination operand");
+	  if (!IS_PREG ($5))
+	    return yyerror ("Preg expected in address");
+
+	  notethat ("LDST: dregs = B [ pregs <post_op> ] (%c)\n",
+		    $8.r0 ? 'X' : 'Z');
+	  $$ = LDST (&$5, &$1, $6.x0, 2, $8.r0, 0);
 	}
 			
 	| REG ASSIGN LBRACK REG _PLUS_PLUS REG RBRACK
 	{
-	  if (IS_DREG ($1) && IS_IREG ($4) && IS_MREG ($6))
+	  if (!IS_DREG ($1))
+	    return yyerror ("Dreg expected for destination operand");
+
+	  if (IS_IREG ($4) && IS_MREG ($6))
 	    {
 	      notethat ("dspLDST: dregs = [ iregs ++ mregs ]\n");
 	      $$ = DSPLDST(&$4, $6.regno & CODE_MASK, &$1, 3, 0);
 	    }
-	  else if (IS_DREG ($1) && IS_PREG ($4) && IS_PREG ($6))
+	  else if (IS_PREG ($4) && IS_PREG ($6))
 	    {
 	      notethat ("LDSTpmod: dregs = [ pregs ++ pregs ]\n");
 	      $$ = LDSTPMOD (&$4, &$1, &$6, 0, 0);
 	    }
 	  else
-	    return yyerror ("Bad register for LOAD");
+	    return yyerror ("Preg ++ Preg or Ireg ++ Mreg expected in address");
 	}
 
 	| REG ASSIGN LBRACK REG plus_minus got_or_expr RBRACK
@@ -3160,18 +3293,24 @@ asm_1:
 	  int isgot = IS_RELOC($6);
 
 	  if (!IS_PREG ($4))
-	    return yyerror ("Preg expected for indirect");
+	    return yyerror ("Preg expected in address");
 
 	  if (!IS_DREG ($1) && !ispreg)
-	    return yyerror ("Bad destination register for LOAD");
+	    return yyerror ("Dreg or Preg expected for destination operand");
+
+	  if (tmp->type == Expr_Node_Reloc
+	      && strcmp (tmp->value.s_value,
+			 "_current_shared_library_p5_offset_") != 0)
+	    return yyerror ("Plain symbol used as offset");
 
 	  if ($5.r0)
 	    tmp = unary (Expr_Op_Type_NEG, tmp);
 
-	  if(isgot){
+	  if (isgot)
+	    {
 	      notethat ("LDSTidxI: dpregs = [ pregs + sym@got ]\n");
-	      $$ = LDSTIDXI (&$4, &$1, 0, 0, ispreg ? 1: 0, tmp);
-	  }
+	      $$ = LDSTIDXI (&$4, &$1, 0, 0, ispreg ? 1 : 0, tmp);
+	    }
 	  else if (in_range_p (tmp, 0, 63, 3))
 	    {
 	      notethat ("LDSTii: dpregs = [ pregs + uimm7m4 ]\n");
@@ -3186,26 +3325,34 @@ asm_1:
 	  else if (in_range_p (tmp, -131072, 131071, 3))
 	    {
 	      notethat ("LDSTidxI: dpregs = [ pregs + imm18m4 ]\n");
-	      $$ = LDSTIDXI (&$4, &$1, 0, 0, ispreg ? 1: 0, tmp);
+	      $$ = LDSTIDXI (&$4, &$1, 0, 0, ispreg ? 1 : 0, tmp);
 	      
 	    }
 	  else
-	    return yyerror ("Displacement out of range for load");
+	    return yyerror ("Displacement out of range");
 	}
 
 	| REG ASSIGN LBRACK REG post_op RBRACK
 	{
-	  if (IS_DREG ($1) && IS_IREG ($4))
+	  if (!IS_IREG ($4) && !IS_PREG ($4))
+	    return yyerror ("Ireg or Preg expected in address");
+	  else if (IS_IREG ($4) && !IS_DREG ($1))
+	    return yyerror ("Dreg expected in destination operand");
+	  else if (IS_PREG ($4) && !IS_DREG ($1) && !IS_PREG ($1)
+		   && ($4.regno != REG_SP || !IS_ALLREG ($1) || $5.x0 != 0))
+	    return yyerror ("Dreg or Preg expected in destination operand");
+
+	  if (IS_IREG ($4))
 	    {
 	      notethat ("dspLDST: dregs = [ iregs <post_op> ]\n");
 	      $$ = DSPLDST (&$4, 0, &$1, $5.x0, 0);
 	    }
-	  else if (IS_DREG ($1) && IS_PREG ($4))
+	  else if (IS_DREG ($1))
 	    {
 	      notethat ("LDST: dregs = [ pregs <post_op> ]\n");
 	      $$ = LDST (&$4, &$1, $5.x0, 0, 0, 0);
 	    }
-	  else if (IS_PREG ($1) && IS_PREG ($4))
+	  else if (IS_PREG ($1))
 	    {
 	      if (REG_SAME ($1, $4) && $5.x0 != 2)
 		return yyerror ("Pregs can't be same");
@@ -3213,13 +3360,11 @@ asm_1:
 	      notethat ("LDST: pregs = [ pregs <post_op> ]\n");
 	      $$ = LDST (&$4, &$1, $5.x0, 0, 1, 0);
 	    }
-	  else if ($4.regno == REG_SP && IS_ALLREG ($1) && $5.x0 == 0)
+	  else
 	    {
 	      notethat ("PushPopReg: allregs = [ SP ++ ]\n");
 	      $$ = PUSHPOPREG (&$1, 0);
 	    }
-	  else
-	    return yyerror ("Bad register or value");
 	}
 
 
@@ -3390,6 +3535,27 @@ asm_1:
 	  else
 	    return yyerror ("Bad register or values for LOOP");
 	}
+
+/* LOOP_BEGIN.  */
+	| LOOP_BEGIN expr
+	{
+	  if (!IS_RELOC ($2))
+	    return yyerror ("Invalid expression in LOOP_BEGIN statement");
+
+	  bfin_loop_beginend ($2, 1);
+	  $$ = 0;
+	}
+
+/* LOOP_END.  */
+	| LOOP_END expr
+	{
+	  if (!IS_RELOC ($2))
+	    return yyerror ("Invalid expression in LOOP_END statement");
+
+	  bfin_loop_beginend ($2, 0);
+	  $$ = 0;
+	}
+
 /* pseudoDEBUG.  */
 
 	| DBG
@@ -3422,21 +3588,27 @@ asm_1:
 	  $$ = bfin_gen_pseudodbg (3, 5, 0);
 	}
 
+	| HLT
+	{
+	  notethat ("psedoDEBUG: HLT\n");
+	  $$ = bfin_gen_pseudodbg (3, 4, 0);
+	}
+
 	| DBGA LPAREN HALF_REG COMMA expr RPAREN
 	{
-	  notethat ("pseudodbg_assert: DBGA (dregs_lo , uimm16 )\n");
+	  notethat ("pseudodbg_assert: DBGA (regs_lo/hi , uimm16 )\n");
 	  $$ = bfin_gen_pseudodbg_assert (IS_H ($3), &$3, uimm16 ($5));
 	}
-		
+
 	| DBGAH LPAREN REG COMMA expr RPAREN
 	{
-	  notethat ("pseudodbg_assert: DBGAH (dregs , uimm16 )\n");
+	  notethat ("pseudodbg_assert: DBGAH (regs , uimm16 )\n");
 	  $$ = bfin_gen_pseudodbg_assert (3, &$3, uimm16 ($5));
 	}
 
 	| DBGAL LPAREN REG COMMA expr RPAREN
 	{
-	  notethat ("psedodbg_assert: DBGAL (dregs , uimm16 )\n");
+	  notethat ("psedodbg_assert: DBGAL (regs , uimm16 )\n");
 	  $$ = bfin_gen_pseudodbg_assert (2, &$3, uimm16 ($5));
 	}
 
@@ -3961,6 +4133,11 @@ a_plusassign:
 assign_macfunc:
 	REG ASSIGN REG_A
 	{
+	  if (IS_A1 ($3) && IS_EVEN ($1))
+	    return yyerror ("Cannot move A1 to even register");
+	  else if (!IS_A1 ($3) && !IS_EVEN ($1))
+	    return yyerror ("Cannot move A0 to odd register");
+
 	  $$.w = 1;
           $$.P = 1;
           $$.n = IS_A1 ($3);
@@ -3968,11 +4145,6 @@ assign_macfunc:
           $$.dst = $1;
 	  $$.s0.regno = 0;
           $$.s1.regno = 0;
-
-	  if (IS_A1 ($3) && IS_EVEN ($1))
-	    return yyerror ("Cannot move A1 to even register");
-	  else if (!IS_A1 ($3) && !IS_EVEN ($1))
-	    return yyerror ("Cannot move A0 to odd register");
 	}
 	| a_macfunc
 	{
@@ -3982,6 +4154,11 @@ assign_macfunc:
 	}
 	| REG ASSIGN LPAREN a_macfunc RPAREN
 	{
+	  if ($4.n && IS_EVEN ($1))
+	    return yyerror ("Cannot move A1 to even register");
+	  else if (!$4.n && !IS_EVEN ($1))
+	    return yyerror ("Cannot move A0 to odd register");
+
 	  $$ = $4;
 	  $$.w = 1;
           $$.P = 1;
@@ -3990,6 +4167,11 @@ assign_macfunc:
 
 	| HALF_REG ASSIGN LPAREN a_macfunc RPAREN
 	{
+	  if ($4.n && !IS_H ($1))
+	    return yyerror ("Cannot move A1 to low half of register");
+	  else if (!$4.n && IS_H ($1))
+	    return yyerror ("Cannot move A0 to high half of register");
+
 	  $$ = $4;
 	  $$.w = 1;
 	  $$.P = 0;
@@ -3998,6 +4180,11 @@ assign_macfunc:
 
 	| HALF_REG ASSIGN REG_A
 	{
+	  if (IS_A1 ($3) && !IS_H ($1))
+	    return yyerror ("Cannot move A1 to low half of register");
+	  else if (!IS_A1 ($3) && IS_H ($1))
+	    return yyerror ("Cannot move A0 to high half of register");
+
 	  $$.w = 1;
 	  $$.P = 0;
 	  $$.n = IS_A1 ($3);
@@ -4005,11 +4192,6 @@ assign_macfunc:
           $$.dst = $1;
 	  $$.s0.regno = 0;
           $$.s1.regno = 0;
-
-	  if (IS_A1 ($3) && !IS_H ($1))
-	    return yyerror ("Cannot move A1 to low half of register");
-	  else if (!IS_A1 ($3) && IS_H ($1))
-	    return yyerror ("Cannot move A0 to high half of register");
 	}
 	;
 
@@ -4072,27 +4254,27 @@ cc_op:
 ccstat:
 	CCREG cc_op STATUS_REG
 	{
-	$$.r0 = $3.regno;
-	$$.x0 = $2.r0;
-	$$.s0 = 0;
+	  $$.r0 = $3.regno;
+	  $$.x0 = $2.r0;
+	  $$.s0 = 0;
 	}
 	| CCREG cc_op V
 	{
-	$$.r0 = 0x18;
-	$$.x0 = $2.r0;
-	$$.s0 = 0;
+	  $$.r0 = 0x18;
+	  $$.x0 = $2.r0;
+	  $$.s0 = 0;
 	}
 	| STATUS_REG cc_op CCREG
 	{
-	$$.r0 = $1.regno;
-	$$.x0 = $2.r0;
-	$$.s0 = 1;
+	  $$.r0 = $1.regno;
+	  $$.x0 = $2.r0;
+	  $$.s0 = 1;
 	}
 	| V cc_op CCREG
 	{
-	$$.r0 = 0x18;
-	$$.x0 = $2.r0;
-	$$.s0 = 1;
+	  $$.r0 = 0x18;
+	  $$.x0 = $2.r0;
+	  $$.s0 = 1;
 	}
 	;
 
@@ -4231,11 +4413,11 @@ mkexpr (int x, SYMBOL_T s)
 static int
 value_match (Expr_Node *expr, int sz, int sign, int mul, int issigned)
 {
-  long umax = (1L << sz) - 1;
-  long min = -1L << (sz - 1);
-  long max = (1L << (sz - 1)) - 1;
+  int umax = (1 << sz) - 1;
+  int min = -1 << (sz - 1);
+  int max = (1 << (sz - 1)) - 1;
 	
-  long v = EXPR_VALUE (expr);
+  int v = (EXPR_VALUE (expr)) & 0xffffffff;
 
   if ((v % mul) != 0)
     {
@@ -4317,7 +4499,7 @@ binary (Expr_Op_Type op, Expr_Node *x, Expr_Node *y)
 	  break;
 
 	default:
-	  error ("%s:%d: Internal compiler error\n", __FILE__, __LINE__); 
+	  error ("%s:%d: Internal assembler error\n", __FILE__, __LINE__);
 	}
       return x;
     }
@@ -4363,7 +4545,7 @@ unary (Expr_Op_Type op, Expr_Node *x)
 	  x->value.i_value = ~x->value.i_value;
 	  break;
 	default:
-	  error ("%s:%d: Internal compiler error\n", __FILE__, __LINE__); 
+	  error ("%s:%d: Internal assembler error\n", __FILE__, __LINE__);
 	}
       return x;
     }

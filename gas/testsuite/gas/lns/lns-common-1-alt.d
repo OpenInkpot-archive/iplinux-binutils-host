@@ -1,7 +1,7 @@
 #source: lns-common-1.s
 #readelf: -wl
 #name: lns-common-1
-Dump of debug contents of section \.debug_line:
+Raw dump of debug contents of section \.debug_line:
 #...
   Initial value of 'is_stmt':  1
 #...
@@ -32,6 +32,10 @@ Dump of debug contents of section \.debug_line:
   Copy
   Set is_stmt to 1
   Advance Line by 1 to 7
+  Advance PC by fixed size amount .* to .*
+  Copy
+  Extended opcode 4: set Discriminator to 1
+  Advance Line by 0 to 7
   Advance PC by fixed size amount .* to .*
   Copy
   Advance PC by fixed size amount .* to .*

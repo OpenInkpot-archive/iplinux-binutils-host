@@ -1,5 +1,5 @@
 # This shell script emits a C file. -*- C -*-
-#   Copyright 2003, 2004, 2005, 2006, 2007
+#   Copyright 2003, 2004, 2005, 2006, 2007, 2008, 2009
 #   Free Software Foundation, Inc.
 #
 # This file is part of the GNU Binutils.
@@ -434,12 +434,14 @@ elf_xtensa_before_allocation (void)
      required to process relocations) for the selected Xtensa
      configuration.  */
 
-  if (is_big_endian && output_bfd->xvec->byteorder == BFD_ENDIAN_LITTLE)
+  if (is_big_endian
+      && link_info.output_bfd->xvec->byteorder == BFD_ENDIAN_LITTLE)
     {
       einfo (_("%F%P: little endian output does not match "
 	       "Xtensa configuration\n"));
     }
-  if (!is_big_endian && output_bfd->xvec->byteorder == BFD_ENDIAN_BIG)
+  if (!is_big_endian
+      && link_info.output_bfd->xvec->byteorder == BFD_ENDIAN_BIG)
     {
       einfo (_("%F%P: big endian output does not match "
 	       "Xtensa configuration\n"));
@@ -1949,20 +1951,17 @@ ld_xtensa_insert_page_offsets (bfd_vma dot,
 		lang_assignment_statement_type *assign_stmt;
 		lang_statement_union_type *assign_union;
 		lang_statement_list_type tmplist;
-		lang_statement_list_type *old_stat_ptr = stat_ptr;
 
 		/* There is hidden state in "lang_add_assignment".  It
 		   appends the new assignment statement to the stat_ptr
 		   list.  Thus, we swap it before and after the call.  */
 
-		tmplist.head = NULL;
-		tmplist.tail = &tmplist.head;
-
-		stat_ptr = &tmplist;
+		lang_list_init (&tmplist);
+		push_stat_ptr (&tmplist);
 		/* Warning: side effect; statement appended to stat_ptr.  */
 		assign_stmt = lang_add_assignment (assign_op);
 		assign_union = (lang_statement_union_type *) assign_stmt;
-		stat_ptr = old_stat_ptr;
+		pop_stat_ptr ();
 
 		assign_union->header.next = l;
 		*(*stack_p)->iterloc.loc = assign_union;
@@ -1999,8 +1998,11 @@ PARSE_AND_LIST_LONGOPTS='
 '
 
 PARSE_AND_LIST_OPTIONS='
-  fprintf (file, _("  --size-opt\t\tWhen relaxing longcalls, prefer size optimization\n\t\t\t  over branch target alignment\n"));
-  fprintf (file, _("  --no-relax\t\tDo not relax branches or coalesce literals\n"));
+  fprintf (file, _("\
+  --size-opt                  When relaxing longcalls, prefer size\n\
+                                optimization over branch target alignment\n"));
+  fprintf (file, _("\
+  --no-relax                  Do not relax branches or coalesce literals\n"));
 '
 
 PARSE_AND_LIST_ARGS_CASES='

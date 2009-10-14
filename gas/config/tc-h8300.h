@@ -1,6 +1,6 @@
 /* This file is tc-h8300.h
    Copyright 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996,
-   1997, 1998, 2000, 2001, 2002, 2003, 2005, 2007
+   1997, 1998, 2000, 2001, 2002, 2003, 2005, 2007, 2008
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -89,3 +89,5 @@ extern int SXmode;
 
 /* This target is buggy, and sets fix size too large.  */
 #define TC_FX_SIZE_SLACK(FIX) 1
+
+#define H_TICK_HEX 1

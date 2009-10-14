@@ -1,5 +1,5 @@
 /* tc-mcore.c -- Assemble code for M*Core
-   Copyright 1999, 2000, 2001, 2002, 2003, 2005, 2006, 2007
+   Copyright 1999, 2000, 2001, 2002, 2003, 2005, 2006, 2007, 2008, 2009
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -411,8 +411,8 @@ const pseudo_typeS md_pseudo_table[] =
      occupy can be taken into account when deciding whether or not to
      dump the current literal pool.
      XXX - currently we do not cope with the .space and .dcb.d directives.  */
-  { "ascii",    mcore_stringer,       0 },
-  { "asciz",    mcore_stringer,       1 },
+  { "ascii",    mcore_stringer,       8 + 0 },
+  { "asciz",    mcore_stringer,       8 + 1 },
   { "byte",     mcore_cons,           1 },
   { "dc",       mcore_cons,           2 },
   { "dc.b",     mcore_cons,           1 },
@@ -430,7 +430,7 @@ const pseudo_typeS md_pseudo_table[] =
   { "quad",     mcore_cons,           8 },
   { "short",    mcore_cons,           2 },
   { "single",   mcore_float_cons,    'f'},
-  { "string",   mcore_stringer,       1 },
+  { "string",   mcore_stringer,       8 + 1 },
   { "word",     mcore_cons,           2 },
   { "fill",     mcore_fill,           0 },
 
@@ -647,7 +647,7 @@ static char *
 parse_exp (char * s, expressionS * e)
 {
   char * save;
-  char * new;
+  char * new_pointer;
 
   /* Skip whitespace.  */
   while (ISSPACE (* s))
@@ -661,10 +661,10 @@ parse_exp (char * s, expressionS * e)
   if (e->X_op == O_absent)
     as_bad (_("missing operand"));
 
-  new = input_line_pointer;
+  new_pointer = input_line_pointer;
   input_line_pointer = save;
 
-  return new;
+  return new_pointer;
 }
 
 static int
@@ -771,10 +771,10 @@ parse_imm (char * s,
 	   unsigned min,
 	   unsigned max)
 {
-  char * new;
+  char * new_pointer;
   expressionS e;
 
-  new = parse_exp (s, & e);
+  new_pointer = parse_exp (s, & e);
 
   if (e.X_op == O_absent)
     ; /* An error message has already been emitted.  */
@@ -786,7 +786,7 @@ parse_imm (char * s,
 
   * val = e.X_add_number;
 
-  return new;
+  return new_pointer;
 }
 
 static char *
@@ -859,7 +859,7 @@ md_assemble (char * str)
   unsigned off;
   unsigned isize;
   expressionS e;
-  char name[20];
+  char name[21];
 
   /* Drop leading whitespace.  */
   while (ISSPACE (* str))
@@ -1616,77 +1616,11 @@ md_mcore_end (void)
 }
 
 /* Various routines to kill one day.  */
-/* Equal to MAX_PRECISION in atof-ieee.c.  */
-#define MAX_LITTLENUMS 6
-
-/* Turn a string in input_line_pointer into a floating point constant of type
-   type, and store the appropriate bytes in *litP.  The number of LITTLENUMS
-   emitted is stored in *sizeP.  An error message is returned, or NULL on OK.  */
 
 char *
-md_atof (int type,  char * litP, int * sizeP)
+md_atof (int type, char * litP, int * sizeP)
 {
-  int prec;
-  LITTLENUM_TYPE words[MAX_LITTLENUMS];
-  int    i;
-  char * t;
-
-  switch (type)
-    {
-    case 'f':
-    case 'F':
-    case 's':
-    case 'S':
-      prec = 2;
-      break;
-
-    case 'd':
-    case 'D':
-    case 'r':
-    case 'R':
-      prec = 4;
-      break;
-
-    case 'x':
-    case 'X':
-      prec = 6;
-      break;
-
-    case 'p':
-    case 'P':
-      prec = 6;
-      break;
-
-    default:
-      *sizeP = 0;
-      return _("Bad call to MD_NTOF()");
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * sizeof (LITTLENUM_TYPE);
-
-  if (! target_big_endian)
-    {
-      for (i = prec - 1; i >= 0; i--)
-	{
-	  md_number_to_chars (litP, (valueT) words[i],
-			      sizeof (LITTLENUM_TYPE));
-	  litP += sizeof (LITTLENUM_TYPE);
-	}
-    }
-  else
-    for (i = 0; i < prec; i++)
-      {
-	md_number_to_chars (litP, (valueT) words[i],
-			    sizeof (LITTLENUM_TYPE));
-	litP += sizeof (LITTLENUM_TYPE);
-      }
-
-  return 0;
+  return ieee_md_atof (type, litP, sizeP, target_big_endian);
 }
 
 const char * md_shortopts = "";
@@ -2201,7 +2135,7 @@ md_pcrel_from_section (fixS * fixp, segT sec ATTRIBUTE_UNUSED)
 	  || (S_GET_SEGMENT (fixp->fx_addsy) != sec)))
 
   {
-    assert (fixp->fx_size == 2);	/* must be an insn */
+    gas_assert (fixp->fx_size == 2);	/* must be an insn */
     return fixp->fx_size;
   }
 #endif
@@ -2267,7 +2201,7 @@ tc_gen_reloc (asection * section ATTRIBUTE_UNUSED, fixS * fixp)
 
       /* Set howto to a garbage value so that we can keep going.  */
       rel->howto = bfd_reloc_type_lookup (stdoutput, BFD_RELOC_32);
-      assert (rel->howto != NULL);
+      gas_assert (rel->howto != NULL);
     }
 
   return rel;

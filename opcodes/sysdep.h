@@ -1,5 +1,5 @@
 /* Random host-dependent support code.
-   Copyright 1995, 1997, 2000, 2007 Free Software Foundation, Inc.
+   Copyright 1995, 1997, 2000, 2005, 2007 Free Software Foundation, Inc.
    Written by Ken Raeburn.
 
    This file is part of the GNU opcodes library.
@@ -41,4 +41,8 @@
 #ifdef HAVE_STRINGS_H
 #include <strings.h>
 #endif
+#endif
+
+#if !HAVE_DECL_STPCPY
+extern char *stpcpy (char *__dest, const char *__src);
 #endif

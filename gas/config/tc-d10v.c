@@ -1,5 +1,6 @@
 /* tc-d10v.c -- Assembler code for the Mitsubishi D10V
-   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2005, 2006, 2007
+   Copyright 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2005, 2006,
+   2007, 2009
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -24,6 +25,7 @@
 #include "subsegs.h"
 #include "opcode/d10v.h"
 #include "elf/ppc.h"
+#include "dwarf2dbg.h"
 
 const char comment_chars[]        = ";";
 const char line_comment_chars[]   = "#";
@@ -251,44 +253,10 @@ md_undefined_symbol (char *name ATTRIBUTE_UNUSED)
   return 0;
 }
 
-/* Turn a string in input_line_pointer into a floating point constant
-   of type TYPE, and store the appropriate bytes in *LITP.  The number
-   of LITTLENUMS emitted is stored in *SIZEP.  An error message is
-   returned, or NULL on OK.  */
-
 char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  int prec;
-  LITTLENUM_TYPE words[4];
-  char *t;
-  int i;
-
-  switch (type)
-    {
-    case 'f':
-      prec = 2;
-      break;
-    case 'd':
-      prec = 4;
-      break;
-    default:
-      *sizeP = 0;
-      return _("bad call to md_atof");
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * 2;
-
-  for (i = 0; i < prec; i++)
-    {
-      md_number_to_chars (litP, (valueT) words[i], 2);
-      litP += 2;
-    }
-  return NULL;
+  return ieee_md_atof (type, litP, sizeP, TRUE);
 }
 
 void
@@ -644,6 +612,7 @@ write_long (unsigned long insn, Fixups *fx)
   int i, where;
   char *f = frag_more (4);
 
+  dwarf2_emit_insn (4);
   insn |= FM11;
   number_to_chars_bigendian (f, insn, 4);
 
@@ -679,6 +648,7 @@ write_1_short (struct d10v_opcode *opcode,
   char *f = frag_more (4);
   int i, where;
 
+  dwarf2_emit_insn (4);
   if (opcode->exec_type & PARONLY)
     as_fatal (_("Instruction must be executed in parallel with another instruction."));
 
@@ -1093,6 +1063,7 @@ write_2_short (struct d10v_opcode *opcode1,
     }
 
   f = frag_more (4);
+  dwarf2_emit_insn (4);
   number_to_chars_bigendian (f, insn, 4);
 
   /* Process fixup chains.  fx refers to insn2 when j == 0, and to
@@ -1658,6 +1629,15 @@ d10v_cleanup (void)
       prev_opcode = NULL;
     }
   return 1;
+}
+
+void
+d10v_frob_label (symbolS *lab)
+{
+  d10v_cleanup ();
+  symbol_set_frag (lab, frag_now);
+  S_SET_VALUE (lab, (valueT) frag_now_fix ());
+  dwarf2_emit_label (lab);
 }
 
 /* Like normal .word, except support @word.

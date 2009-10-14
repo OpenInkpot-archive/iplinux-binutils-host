@@ -1,6 +1,6 @@
 /* ns32k.c  -- Assemble on the National Semiconductor 32k series
    Copyright 1987, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000,
-   2001, 2002, 2003, 2005, 2006, 2007
+   2001, 2002, 2003, 2005, 2006, 2007, 2008, 2009
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -712,7 +712,7 @@ get_addr_mode (char *ptr, addr_modeS *addr_modeP)
       addr_modeP->am_size += 1;
     }
 
-  assert (addr_modeP->mode >= 0); 
+  gas_assert (addr_modeP->mode >= 0); 
   if (disp_test[(unsigned int) addr_modeP->mode])
     {
       char c;
@@ -725,7 +725,7 @@ get_addr_mode (char *ptr, addr_modeS *addr_modeP)
       /* There was a displacement, probe for length  specifying suffix.  */
       addr_modeP->pcrel = 0;
 
-      assert(addr_modeP->mode >= 0);
+      gas_assert (addr_modeP->mode >= 0);
       if (disp_test[(unsigned int) addr_modeP->mode])
 	{
 	  /* There is a displacement.  */
@@ -880,7 +880,7 @@ bit_fix_new (int size,		/* Length of bitfield.  */
 {
   bit_fixS *bit_fixP;
 
-  bit_fixP = (bit_fixS *) obstack_alloc (&notes, sizeof (bit_fixS));
+  bit_fixP = obstack_alloc (&notes, sizeof (bit_fixS));
 
   bit_fixP->fx_bit_size = size;
   bit_fixP->fx_bit_offset = offset;
@@ -1913,9 +1913,6 @@ md_begin (void)
   freeptr_static = (char *) malloc (PRIVATE_SIZE);
 }
 
-/* Must be equal to MAX_PRECISON in atof-ieee.c.  */
-#define MAX_LITTLENUMS 6
-
 /* Turn the string pointed to by litP into a floating point constant
    of type TYPE, and emit the appropriate bytes.  The number of
    LITTLENUMS emitted is stored in *SIZEP.  An error message is
@@ -1924,38 +1921,7 @@ md_begin (void)
 char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  int prec;
-  LITTLENUM_TYPE words[MAX_LITTLENUMS];
-  LITTLENUM_TYPE *wordP;
-  char *t;
-
-  switch (type)
-    {
-    case 'f':
-      prec = 2;
-      break;
-
-    case 'd':
-      prec = 4;
-      break;
-    default:
-      *sizeP = 0;
-      return _("Bad call to MD_ATOF()");
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * sizeof (LITTLENUM_TYPE);
-
-  for (wordP = words + prec; prec--;)
-    {
-      md_number_to_chars (litP, (long) (*--wordP), sizeof (LITTLENUM_TYPE));
-      litP += sizeof (LITTLENUM_TYPE);
-    }
-
-  return 0;
+  return ieee_md_atof (type, litP, sizeP, FALSE);
 }
 
 int

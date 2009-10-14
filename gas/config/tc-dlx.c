@@ -1,5 +1,6 @@
 /* tc-ldx.c -- Assemble for the DLX
-   Copyright 2002, 2003, 2004, 2005, 2007 Free Software Foundation, Inc.
+   Copyright 2002, 2003, 2004, 2005, 2007, 2009
+   Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -287,7 +288,7 @@ md_begin (void)
 
       if (retval != NULL)
 	{
-	  fprintf (stderr, "internal error: can't hash `%s': %s\n",
+	  fprintf (stderr, _("internal error: can't hash `%s': %s\n"),
 		   machine_opcodes[i].name, retval);
 	  lose = 1;
 	}
@@ -594,7 +595,7 @@ static char *
 parse_operand (char *s, expressionS *operandp)
 {
   char *save = input_line_pointer;
-  char *new;
+  char *new_pos;
 
   the_insn.HI = the_insn.LO = 0;
 
@@ -641,9 +642,9 @@ parse_operand (char *s, expressionS *operandp)
       (void) expression (operandp);
     }
 
-  new = input_line_pointer;
+  new_pos = input_line_pointer;
   input_line_pointer = save;
-  return new;
+  return new_pos;
 }
 
 /* Instruction parsing.  Takes a string containing the opcode.
@@ -889,7 +890,7 @@ machine_ip (char *str)
 	}
 
       /* Types or values of args don't match.  */
-      as_bad ("Invalid operands");
+      as_bad (_("Invalid operands"));
       return;
     }
 }
@@ -908,6 +909,8 @@ md_assemble (char *str)
   know (str);
   machine_ip (str);
   toP = frag_more (4);
+  dwarf2_emit_insn (4);
+
   /* Put out the opcode.  */
   md_number_to_chars (toP, the_insn.opcode, 4);
 
@@ -975,69 +978,13 @@ md_assemble (char *str)
 }
 
 /* This is identical to the md_atof in m68k.c.  I think this is right,
-   but I'm not sure.
-
-   Turn a string in input_line_pointer into a floating point constant
-   of type TYPE, and store the appropriate bytes in *LITP.  The number
-   of LITTLENUMS emitted is stored in *SIZEP.  An error message is
-   returned, or NULL on OK.  */
-/* Dlx will not use it anyway, so I just leave it here for now.  */
-
-/* Equal to MAX_PRECISION in atof-ieee.c.  */
-#define MAX_LITTLENUMS 6
+   but I'm not sure.  Dlx will not use it anyway, so I just leave it
+   here for now.  */
 
 char *
 md_atof (int type, char *litP, int *sizeP)
 {
-  int prec;
-  LITTLENUM_TYPE words[MAX_LITTLENUMS];
-  LITTLENUM_TYPE *wordP;
-  char *t;
-
-  switch (type)
-    {
-    case 'f':
-    case 'F':
-    case 's':
-    case 'S':
-      prec = 2;
-      break;
-
-    case 'd':
-    case 'D':
-    case 'r':
-    case 'R':
-      prec = 4;
-      break;
-
-    case 'x':
-    case 'X':
-      prec = 6;
-      break;
-
-    case 'p':
-    case 'P':
-      prec = 6;
-      break;
-
-    default:
-      *sizeP = 0;
-      return "Bad call to MD_ATOF()";
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * sizeof (LITTLENUM_TYPE);
-
-  for (wordP = words; prec--;)
-    {
-      md_number_to_chars (litP, (valueT) (*wordP++), sizeof (LITTLENUM_TYPE));
-      litP += sizeof (LITTLENUM_TYPE);
-    }
-
-  return 0;
+  return ieee_md_atof (type, litP, sizeP, TRUE);
 }
 
 /* Write out big-endian.  */
@@ -1253,13 +1200,13 @@ tc_gen_reloc (asection *section ATTRIBUTE_UNUSED,
   if (reloc->howto == NULL)
     {
       as_bad_where (fixP->fx_file, fixP->fx_line,
-		    "internal error: can't export reloc type %d (`%s')",
+		    _("internal error: can't export reloc type %d (`%s')"),
 		    fixP->fx_r_type,
 		    bfd_get_reloc_code_name (fixP->fx_r_type));
       return NULL;
     }
 
-  assert (!fixP->fx_pcrel == !reloc->howto->pc_relative);
+  gas_assert (!fixP->fx_pcrel == !reloc->howto->pc_relative);
 
   reloc->sym_ptr_ptr = xmalloc (sizeof (asymbol *));
   *reloc->sym_ptr_ptr = symbol_get_bfdsym (fixP->fx_addsy);
@@ -1276,7 +1223,7 @@ const pseudo_typeS
 dlx_pseudo_table[] =
 {
   /* Some additional ops that are used by gcc-dlx.  */
-  {"asciiz", stringer, 1},
+  {"asciiz", stringer, 8 + 1},
   {"half", cons, 2},
   {"dword", cons, 8},
   {"word", cons, 4},
@@ -1291,4 +1238,3 @@ dlx_pop_insert (void)
   pop_insert (dlx_pseudo_table);
   return ;
 }
-

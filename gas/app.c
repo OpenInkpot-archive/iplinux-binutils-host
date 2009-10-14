@@ -1,6 +1,6 @@
 /* This is the Assembler Pre-Processor
    Copyright 1987, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998,
-   1999, 2000, 2001, 2002, 2003, 2006, 2007
+   1999, 2000, 2001, 2002, 2003, 2005, 2006, 2007, 2008
    Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
@@ -32,6 +32,10 @@
 #ifndef const
 #define const  /* empty */
 #endif
+#endif
+
+#ifdef H_TICK_HEX
+int enable_h_tick_hex = 0;
 #endif
 
 #ifdef TC_M68K
@@ -78,6 +82,9 @@ static const char symbol_chars[] =
 #define LEX_IS_DOUBLEBAR_1ST		13
 #endif
 #define LEX_IS_PARALLEL_SEPARATOR	14
+#ifdef H_TICK_HEX
+#define LEX_IS_H			15
+#endif
 #define IS_SYMBOL_COMPONENT(c)		(lex[c] == LEX_IS_SYMBOL_COMPONENT)
 #define IS_WHITESPACE(c)		(lex[c] == LEX_IS_WHITESPACE)
 #define IS_LINE_SEPARATOR(c)		(lex[c] == LEX_IS_LINE_SEPARATOR)
@@ -190,6 +197,14 @@ do_scrub_begin (int m68k_mri ATTRIBUTE_UNUSED)
   /* Must do this is we want VLIW instruction with "->" or "<-".  */
   lex['-'] = LEX_IS_SYMBOL_COMPONENT;
 #endif
+
+#ifdef H_TICK_HEX
+  if (enable_h_tick_hex)
+    {
+      lex['h'] = LEX_IS_H;
+      lex['H'] = LEX_IS_H;
+    }
+#endif
 }
 
 /* Saved state of the scrubber.  */
@@ -243,7 +258,7 @@ app_push (void)
     saved->saved_input = NULL;
   else
     {
-      saved->saved_input = xmalloc (saved_input_len);
+      saved->saved_input = (char *) xmalloc (saved_input_len);
       memcpy (saved->saved_input, saved_input, saved_input_len);
       saved->saved_input_len = saved_input_len;
     }
@@ -279,7 +294,7 @@ app_pop (char *arg)
     saved_input = NULL;
   else
     {
-      assert (saved->saved_input_len <= (int) (sizeof input_buffer));
+      gas_assert (saved->saved_input_len <= (int) (sizeof input_buffer));
       memcpy (input_buffer, saved->saved_input, saved->saved_input_len);
       saved_input = input_buffer;
       saved_input_len = saved->saved_input_len;
@@ -676,7 +691,7 @@ do_scrub_chars (int (*get) (char *, int), char *tostart, int tolen)
 	  if (ch == '\'')
 	    /* Change to avoid warning about unclosed string.  */
 	    PUT ('`');
-	  else
+	  else if (ch != EOF)
 	    UNGET (ch);
 	  break;
 #endif
@@ -832,7 +847,8 @@ do_scrub_chars (int (*get) (char *, int), char *tostart, int tolen)
 	      /* Only keep this white if there's no white *after* the
 		 colon.  */
 	      ch2 = GET ();
-	      UNGET (ch2);
+	      if (ch2 != EOF)
+		UNGET (ch2);
 	      if (!IS_WHITESPACE (ch2))
 		{
 		  state = 9;
@@ -1008,6 +1024,16 @@ do_scrub_chars (int (*get) (char *, int), char *tostart, int tolen)
 
 #ifndef IEEE_STYLE
 	case LEX_IS_ONECHAR_QUOTE:
+#ifdef H_TICK_HEX
+	  if (state == 9 && enable_h_tick_hex)
+	    {
+	      char c;
+
+	      c = GET ();
+	      as_warn ("'%c found after symbol", c);
+	      UNGET (c);
+	    }
+#endif
 	  if (state == 10)
 	    {
 	      /* Preserve the whitespace in foo 'b'.  */
@@ -1096,7 +1122,8 @@ do_scrub_chars (int (*get) (char *, int), char *tostart, int tolen)
 	  ch2 = GET ();
 	  if (ch2 != '-')
 	    {
-	      UNGET (ch2);
+	      if (ch2 != EOF)
+		UNGET (ch2);
 	      goto de_fault;
 	    }
 	  /* Read and skip to end of line.  */
@@ -1116,7 +1143,8 @@ do_scrub_chars (int (*get) (char *, int), char *tostart, int tolen)
 #ifdef DOUBLEBAR_PARALLEL
 	case LEX_IS_DOUBLEBAR_1ST:
 	  ch2 = GET ();
-	  UNGET (ch2);
+	  if (ch2 != EOF)
+	    UNGET (ch2);
 	  if (ch2 != '|')
 	    goto de_fault;
 
@@ -1251,6 +1279,26 @@ do_scrub_chars (int (*get) (char *, int), char *tostart, int tolen)
 	  PUT ('\n');
 	  break;
 
+#ifdef H_TICK_HEX
+	case LEX_IS_H:
+	  /* Look for strings like H'[0-9A-Fa-f] and if found, replace
+	     the H' with 0x to make them gas-style hex characters.  */
+	  if (enable_h_tick_hex)
+	    {
+	      char quot;
+
+	      quot = GET ();
+	      if (quot == '\'')
+		{
+		  UNGET ('x');
+		  ch = '0';
+		}
+	      else
+		UNGET (quot);
+	    }
+	  /* FALL THROUGH */
+#endif
+
 	case LEX_IS_SYMBOL_COMPONENT:
 	  if (state == 10)
 	    {
@@ -1281,7 +1329,8 @@ do_scrub_chars (int (*get) (char *, int), char *tostart, int tolen)
 		  state = 9;
 		  if (!IS_SYMBOL_COMPONENT (ch)) 
 		    {
-		      UNGET (ch);
+		      if (ch != EOF)
+			UNGET (ch);
 		      break;
 		    }
 		}
@@ -1405,4 +1454,3 @@ do_scrub_chars (int (*get) (char *, int), char *tostart, int tolen)
 
   return to - tostart;
 }
-

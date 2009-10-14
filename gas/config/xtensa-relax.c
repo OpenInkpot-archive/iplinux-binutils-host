@@ -1,5 +1,6 @@
 /* Table of relaxations for Xtensa assembly.
-   Copyright 2003, 2004, 2005, 2007 Free Software Foundation, Inc.
+   Copyright 2003, 2004, 2005, 2006, 2007, 2008, 2009
+   Free Software Foundation, Inc.
 
    This file is part of GAS, the GNU Assembler.
 
@@ -463,7 +464,14 @@ static string_pattern_pair widen_spec_list[] =
   {"call8 %label,%ar8 ? IsaUseConst16",
    "const16 a8,HI16U(%label); const16 a8,LOW16U(%label); callx8 a8,%ar8"},
   {"call12 %label,%ar12 ? IsaUseConst16",
-   "const16 a12,HI16U(%label); const16 a12,LOW16U(%label); callx12 a12,%ar12"}
+   "const16 a12,HI16U(%label); const16 a12,LOW16U(%label); callx12 a12,%ar12"},
+
+  /* Expanding j.l with literals.  */
+  {"j %label ? FREEREG ? IsaUseL32R",
+   "LITERAL %label; l32r FREEREG,%LITERAL; jx FREEREG"},
+  /* Expanding j.l with const16.  */
+  {"j %label ? FREEREG ? IsaUseConst16",
+   "const16 FREEREG,HI16U(%label); const16 FREEREG,LOW16U(%label); jx FREEREG"},
 };
 
 #define WIDEN_COUNT (sizeof (widen_spec_list) / sizeof (string_pattern_pair))
@@ -518,8 +526,8 @@ append_transition (TransitionTable *tt,
   TransitionList *tl = (TransitionList *) xmalloc (sizeof (TransitionList));
   TransitionList *prev;
   TransitionList **t_p;
-  assert (tt != NULL);
-  assert (opcode < tt->num_opcodes);
+  gas_assert (tt != NULL);
+  gas_assert (opcode < tt->num_opcodes);
 
   prev = tt->table[opcode];
   tl->rule = t;
@@ -645,13 +653,13 @@ append_op (BuildInstr *bi, BuildOp *b_op)
 
 
 static void
-append_literal_op (BuildInstr *bi, unsigned op1)
+append_literal_op (BuildInstr *bi, unsigned op1, unsigned src_op)
 {
   BuildOp *b_op = (BuildOp *) xmalloc (sizeof (BuildOp));
 
   b_op->op_num = op1;
   b_op->typ = OP_LITERAL;
-  b_op->op_data = 0;
+  b_op->op_data = src_op;
   b_op->next = NULL;
   append_op (bi, b_op);
 }
@@ -892,7 +900,7 @@ op_is_constant (const opname_map_e *m1)
 static unsigned
 op_get_constant (const opname_map_e *m1)
 {
-  assert (m1->operand_name == NULL);
+  gas_assert (m1->operand_name == NULL);
   return m1->constant_value;
 }
 
@@ -1536,9 +1544,12 @@ transition_applies (insn_pattern *initial_insn,
 	  else if (!strcmp (option_name, "Loops"))
 	    option_available = (XCHAL_HAVE_LOOPS == 1);
 	  else if (!strcmp (option_name, "WideBranches"))
-	    option_available = (XCHAL_HAVE_WIDE_BRANCHES == 1);
+	    option_available 
+	      = (XCHAL_HAVE_WIDE_BRANCHES == 1 && produce_flix == FLIX_ALL);
 	  else if (!strcmp (option_name, "PredictedBranches"))
-	    option_available = (XCHAL_HAVE_PREDICTED_BRANCHES == 1);
+	    option_available
+	      = (XCHAL_HAVE_PREDICTED_BRANCHES == 1
+		 && produce_flix == FLIX_ALL);
 	  else if (!strcmp (option_name, "Booleans"))
 	    option_available = (XCHAL_HAVE_BOOLEANS == 1);
 	  else
@@ -1594,6 +1605,7 @@ build_transition (insn_pattern *initial_insn,
   TransitionRule *tr = NULL;
   xtensa_opcode opcode;
   xtensa_isa isa = xtensa_default_isa;
+  BuildInstr *literal_bi;
 
   opname_map_e *op1;
   opname_map_e *op2;
@@ -1706,6 +1718,7 @@ build_transition (insn_pattern *initial_insn,
      can be used before they are defined.  Also there are a number of
      special operands (e.g., HI24S).  */
 
+  literal_bi = NULL;
   for (r = replace_insns->head; r != NULL; r = r->next)
     {
       BuildInstr *bi;
@@ -1730,6 +1743,7 @@ build_transition (insn_pattern *initial_insn,
 	  bi->typ = INSTR_LITERAL_DEF;
 	  if (operand_count != 1)
 	    as_fatal (_("expected one operand for generated literal"));
+	  literal_bi = bi;
 	}
       else if (strcmp (opcode_name, "LABEL") == 0)
 	{
@@ -1768,7 +1782,13 @@ build_transition (insn_pattern *initial_insn,
 	  if (op_is_constant (op))
 	    append_constant_op (bi, op->operand_num, op_get_constant (op));
 	  else if (strcmp (op->operand_name, "%LITERAL") == 0)
-	    append_literal_op (bi, op->operand_num);
+	    {
+	      if (! literal_bi || ! literal_bi->ops || literal_bi->ops->next)
+		as_fatal (_("opcode '%s': cannot find literal definition"),
+			  opcode_name);
+	      append_literal_op (bi, op->operand_num,
+				 literal_bi->ops->op_data);
+	    }
 	  else if (strcmp (op->operand_name, "%LABEL") == 0)
 	    append_label_op (bi, op->operand_num);
 	  else if (op->operand_name[0] == 'a'
@@ -1783,6 +1803,10 @@ build_transition (insn_pattern *initial_insn,
 		as_fatal (_("opcode %s: unidentified operand '%s' in '%s'"),
 			  opcode_name, op->operand_name, to_string);
 	      append_field_op (bi, op->operand_num, orig_op->operand_num);
+	    }
+	  else if (strcmp (op->operand_name, "FREEREG") == 0)
+	    {
+	      append_user_fn_field_op (bi, op->operand_num, OP_FREEREG, 0);
 	    }
 	  else if (parse_special_fn (op->operand_name,
 				     &fn_name, &operand_arg_name))

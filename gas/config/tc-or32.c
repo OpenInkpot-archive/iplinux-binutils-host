@@ -1,5 +1,5 @@
 /* Assembly backend for the OpenRISC 1000.
-   Copyright (C) 2002, 2003, 2005, 2007
+   Copyright (C) 2002, 2003, 2005, 2007, 2009
    Free Software Foundation, Inc.
    Contributed by Damjan Lampret <lampret@opencores.org>.
    Modified bu Johan Rydberg, <johan.rydberg@netinsight.se>.
@@ -262,7 +262,7 @@ static char *
 parse_operand (char *s, expressionS *operandp, int opt)
 {
   char *save = input_line_pointer;
-  char *new;
+  char *new_pointer;
 
 #if DEBUG
   printf ("  PROCESS NEW OPERAND(%s) == %c (%d)\n", s, opt ? opt : '!', opt);
@@ -312,14 +312,15 @@ parse_operand (char *s, expressionS *operandp, int opt)
         }
     }
 
-  new = input_line_pointer;
+  new_pointer = input_line_pointer;
   input_line_pointer = save;
 
 #if DEBUG
-  printf ("  %s=parse_operand(%s): operandp->X_op = %u\n", new, s, operandp->X_op);
+  printf ("  %s=parse_operand(%s): operandp->X_op = %u\n", new_pointer, s,
+          operandp->X_op);
 #endif
 
-  return new;
+  return new_pointer;
 }
 
 /* Instruction parsing.  Takes a string containing the opcode.
@@ -530,69 +531,10 @@ machine_ip (char *str)
     }
 }
 
-/* This is identical to the md_atof in m68k.c.  I think this is right,
-   but I'm not sure.
-
-   Turn a string in input_line_pointer into a floating point constant
-   of type type, and store the appropriate bytes in *litP.  The number
-   of LITTLENUMS emitted is stored in *sizeP .  An error message is
-   returned, or NULL on OK.  */
-
-/* Equal to MAX_PRECISION in atof-ieee.c.  */
-#define MAX_LITTLENUMS 6
-
 char *
 md_atof (int type, char * litP, int *  sizeP)
 {
-  int prec;
-  LITTLENUM_TYPE words[MAX_LITTLENUMS];
-  LITTLENUM_TYPE *wordP;
-  char *t;
-
-  switch (type)
-    {
-    case 'f':
-    case 'F':
-    case 's':
-    case 'S':
-      prec = 2;
-      break;
-
-    case 'd':
-    case 'D':
-    case 'r':
-    case 'R':
-      prec = 4;
-      break;
-
-    case 'x':
-    case 'X':
-      prec = 6;
-      break;
-
-    case 'p':
-    case 'P':
-      prec = 6;
-      break;
-
-    default:
-      *sizeP = 0;
-      return _("Bad call to MD_ATOF()");
-    }
-
-  t = atof_ieee (input_line_pointer, type, words);
-  if (t)
-    input_line_pointer = t;
-
-  *sizeP = prec * sizeof (LITTLENUM_TYPE);
-
-  for (wordP = words; prec--;)
-    {
-      md_number_to_chars (litP, (valueT) (*wordP++), sizeof (LITTLENUM_TYPE));
-      litP += sizeof (LITTLENUM_TYPE);
-    }
-
-  return NULL;
+  return ieee_md_atof (type, litP, sizeP, TRUE);
 }
 
 /* Write out big-endian.  */

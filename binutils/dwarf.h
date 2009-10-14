@@ -1,5 +1,5 @@
-/* dwwrf.h - DWARF support header file
-   Copyright 2005, 2007
+/* dwarf.h - DWARF support header file
+   Copyright 2005, 2007, 2008, 2009
    Free Software Foundation, Inc.
 
    This file is part of GNU Binutils.
@@ -31,6 +31,12 @@ typedef unsigned long dwarf_size_type;
 
 struct dwarf_section
 {
+  /* A debug section has a different name when it's stored compressed
+   * or not.  COMPRESSED_NAME and UNCOMPRESSED_NAME are the two
+   * possibilities.  NAME is set to whichever one is used for this
+   * input file, as determined by load_debug_section().  */
+  const char *uncompressed_name;
+  const char *compressed_name;
   const char *name;
   unsigned char *start;
   dwarf_vma address;
@@ -43,8 +49,8 @@ struct dwarf_section_display
 {
   struct dwarf_section section;
   int (*display) (struct dwarf_section *, void *);
+  int *enabled;
   unsigned int relocate : 1;
-  unsigned int eh_frame : 1;
 };
 
 enum dwarf_section_display_enum {
@@ -81,6 +87,7 @@ typedef struct
   int		*have_frame_base;
   unsigned int   num_loc_offsets;
   unsigned int   max_loc_offsets;
+  /* List of .debug_ranges offsets seen in this .debug_info.  */
   unsigned long *range_lists;
   unsigned int   num_range_lists;
   unsigned int   max_range_lists;
@@ -91,8 +98,7 @@ extern dwarf_vma (*byte_get) (unsigned char *, int);
 extern dwarf_vma byte_get_little_endian (unsigned char *, int);
 extern dwarf_vma byte_get_big_endian (unsigned char *, int);
 
-extern dwarf_vma eh_addr_size;
-extern int is_relocatable;
+extern int eh_addr_size;
 
 extern int do_debug_info;
 extern int do_debug_abbrevs;
@@ -106,11 +112,17 @@ extern int do_debug_macinfo;
 extern int do_debug_str;
 extern int do_debug_loc;
 
+extern void init_dwarf_regnames (unsigned int);
+
 extern int load_debug_section (enum dwarf_section_display_enum,
 			       void *);
 extern void free_debug_section (enum dwarf_section_display_enum);
 
 extern void free_debug_memory (void);
+
+extern void dwarf_select_sections_by_names (const char *names);
+extern void dwarf_select_sections_by_letters (const char *letters);
+extern void dwarf_select_sections_all (void);
 
 void *cmalloc (size_t, size_t);
 void *xcmalloc (size_t, size_t);

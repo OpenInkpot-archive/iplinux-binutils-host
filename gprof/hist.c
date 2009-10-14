@@ -20,8 +20,8 @@
    Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
    02110-1301, USA.  */
 
-#include "libiberty.h"
 #include "gprof.h"
+#include "libiberty.h"
 #include "search_list.h"
 #include "source.h"
 #include "symtab.h"
@@ -198,8 +198,8 @@ hist_read_rec (FILE * ifp, const char *filename)
 
       /* This is new record.  Add it to global array and allocate space for
 	 the samples.  */
-      histograms = xrealloc (histograms,
-			     sizeof (histogram) * (num_histograms + 1));
+      histograms = (struct histogram *)
+          xrealloc (histograms, sizeof (histogram) * (num_histograms + 1));
       memcpy (histograms + num_histograms,
 	      &n_record, sizeof (histogram));
       record = &histograms[num_histograms];      
