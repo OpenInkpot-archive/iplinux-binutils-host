@@ -1,0 +1,98 @@
+#!/bin/sh -e
+## 130_disable_pie_on_mips.dpatch
+##
+## DP: Description: Disable -pie on mips/mipsel, add option --force-pie to overwrite
+## DP: Author: Matthias Klose <doko.debian.org>
+## DP: Upstream status: Debian specific
+
+if [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+
+[ -f debian/patches/00patch-opts ] && . debian/patches/00patch-opts
+patch_opts="${patch_opts:--f --no-backup-if-mismatch}"
+
+case "$1" in
+       -patch) patch $patch_opts -p1 < $0;;
+       -unpatch) patch $patch_opts -p1 -R < $0;;
+        *)
+                echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+                exit 1;;
+esac
+
+exit 0
+
+@DPATCH@
+--- binutils-2.19.91.20090923.orig/ld/lexsup.c
++++ binutils-2.19.91.20090923/ld/lexsup.c
+@@ -160,6 +160,9 @@
+   OPTION_ACCEPT_UNKNOWN_INPUT_ARCH,
+   OPTION_NO_ACCEPT_UNKNOWN_INPUT_ARCH,
+   OPTION_PIE,
++#if defined(__mips__)
++  OPTION_FORCE_PIE,
++#endif
+   OPTION_UNRESOLVED_SYMBOLS,
+   OPTION_WARN_UNRESOLVED_SYMBOLS,
+   OPTION_ERROR_UNRESOLVED_SYMBOLS,
+@@ -484,6 +487,10 @@
+     '\0', NULL, N_("Create a position independent executable"), ONE_DASH },
+   { {"pic-executable", no_argument, NULL, OPTION_PIE},
+     '\0', NULL, NULL, TWO_DASHES },
++#if defined(__mips__)
++  { {"force-pie", no_argument, NULL, OPTION_FORCE_PIE},
++    '\0', NULL, "Force creation of a position independent executable (Debian mips/mipsel specific)", TWO_DASHES },
++#endif
+   { {"sort-common", optional_argument, NULL, OPTION_SORT_COMMON},
+     '\0', N_("[=ascending|descending]"), 
+     N_("Sort common symbols by alignment [in specified order]"), 
+@@ -591,6 +598,9 @@
+   struct option *really_longopts;
+   int last_optind;
+   enum report_method how_to_report_unresolved_symbols = RM_GENERATE_ERROR;
++#if defined(__mips__)
++  int force_pie = FALSE;
++#endif
+ 
+   shortopts = (char *) xmalloc (OPTION_COUNT * 3 + 2);
+   longopts = (struct option *)
+@@ -1161,6 +1171,11 @@
+ 	  else
+ 	    einfo (_("%P%F: -pie not supported\n"));
+ 	  break;
++#if defined(__mips__)
++	case OPTION_FORCE_PIE:
++	  force_pie = TRUE;
++	  break;
++#endif
+ 	case 'h':		/* Used on Solaris.  */
+ 	case OPTION_SONAME:
+ 	  command_line.soname = optarg;
+@@ -1499,6 +1514,13 @@
+   if (link_info.unresolved_syms_in_shared_libs == RM_NOT_YET_SET)
+     /* FIXME: Should we allow emulations a chance to set this ?  */
+     link_info.unresolved_syms_in_shared_libs = how_to_report_unresolved_symbols;
++
++#if defined(__mips__)
++  if (link_info.pie && !force_pie)
++    {
++      einfo ("%P%F: -pie broken and disabled on mips/mipsel in Debian, use --force-pie to overwrite\n");
++    }
++#endif
+ }
+ 
+ /* Add the (colon-separated) elements of DIRLIST_PTR to the
+--- binutils-2.19.91.20090923.orig/ld/testsuite/ld-pie/pie.exp
++++ binutils-2.19.91.20090923/ld/testsuite/ld-pie/pie.exp
+@@ -26,6 +26,10 @@
+ if { ![istarget *-*-linux*] } {
+     return
+ }
++# Disable tests on mips/mipsel
++if { [istarget mips*-*-linux*] } {
++    return
++}
+ 
+ # Check if -pie is supported or not.
+ send_log "$CC -fpie -pie $srcdir/$subdir/pie.c -o tmpdir/pie"

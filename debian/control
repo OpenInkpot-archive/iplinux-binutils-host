@@ -1,87 +1,60 @@
 Source: binutils
-Section: host/tools
+Section: core
 Priority: optional
 Maintainer: Mikhail Gusarov <dottedmag@dottedmag.net>
-Standards-Version: 3.8.0
-Build-Depends: dpkg-dev (>= 1.13.9), autoconf (>= 2.13), bash, bison, flex, gettext, texinfo, expect-tcl8.3 (>= 5.32.2) [hppa], dejagnu (>= 1.4.2-1.1), dpatch, file, bzip2, lsb-release
+Build-Depends: debhelper (>= 7), bash, bison, flex, dpatch, texinfo
+XCS-Cross-Host-Build-Depends: debhelper (>= 7), bash, bison, flex, dpatch, texinfo
+XCS-Cross-Build-Depends: 
+Standards-Version: 3.8.3
 
 Package: binutils
 Architecture: any
 Depends: ${shlibs:Depends}
-Conflicts: gas, elf-binutils, modutils (<< 2.4.19-1) ${extraConflicts}
-Provides: elf-binutils
-Suggests: binutils-doc (= ${source:Version})
 Description: The GNU assembler, linker and binary utilities
  The programs in this package are used to assemble, link and manipulate
  binary and object files.  They may be used in conjunction with a compiler
  and various libraries to build programs.
 
-Package: binutils-dev
+Package: libbfd0
 Architecture: any
-Priority: extra
-Depends: binutils (= ${binary:Version})
-Conflicts: libbfd-dev
-Provides: libbfd-dev
-Replaces: libbfd-dev, libc5-dev
-Description: The GNU binary utilities (BFD development files)
- This package includes header files and static libraries necessary to build
- programs which use the GNU BFD library, which is part of binutils.  Note
- that building Debian packages which depend on the shared libbfd is Not
- Allowed.
+Depends: ${shlibs:Depends}
+Description: The GNU object file library
+ BFD is an object file library.  It permits applications to use the same
+ routines to process object files regardless of their format.
 
-Package: binutils-multiarch
+Package: libbfd-dev
+Section: libdevel
 Architecture: any
-Priority: extra
-Depends: ${shlibs:Depends}, binutils (= ${binary:Version})
-Provides: multiarch-binutils
-Description: Binary utilities that support multi-arch targets
- The programs in this package are used to manipulate binary and object
- files that may have been created on other architectures.  This package
- is primarily for multi-architecture developers and cross-compilers and
- is not needed by normal users or developers.  Note that a cross-assembling
- version of gas is not included in this package, just the binary utilities.
- NORMAL USERS SHOULD NOT INSTALL THIS PACKAGE.  It's meant only for those
- requiring support for reading info from binaries from other architectures.
-
-Package: binutils-hppa64
-Architecture: hppa
-Depends: ${shlibs:Depends}, binutils (= ${binary:Version})
-Recommends: libc6-dev
-Suggests: binutils-doc (>= ${source:Version})
-Description: The GNU assembler, linker and binary utilities targeted for hppa64-linux
- The programs in this package are used to assemble, link and manipulate
- binary and object files.  They may be used in conjunction with a compiler
- and various libraries to build programs.
+Depends: libbfd0 (= ${binary:Version})
+Description: The GNU object file library -- development files
+ BFD is an object file library.  It permits applications to use the same
+ routines to process object files regardless of their format.
  .
- This package is needed to build an 64-bit kernel for 64-bit hppa machines.
+ This package contains headers and other files required to link with library.
 
-Package: binutils-spu
-Architecture: powerpc ppc64
-Depends: ${shlibs:Depends}, binutils (= ${binary:Version})
-Recommends: libc6-dev
-Conflicts: spu-binutils
-Replaces: spu-binutils
-Provides: spu-binutils
-Suggests: binutils-doc (>= ${source:Version})
-Description: The GNU assembler, linker and binary utilities targeted for spu-elf
- The programs in this package are used to assemble, link and manipulate
- binary and object files.  They may be used in conjunction with a compiler
- and various libraries to build programs.
+Package: libopcodes0
+Architecture: any
+Depends: ${shlibs:Depends}
+Description: The GNU assembler opcodes library
+ libopcodes is a library providing support for disassembling of object files for
+ different architectures.
+
+Package: libopcodes-dev
+Section: libdevel
+Architecture: any
+Depends: libopcodes0 (= ${binary:Version})
+Description: The GNU assembler opcodes library -- development files
+ libopcodes is a library providing support for disassembling of object files for
+ different architectures.
  .
- This package is needed to build programs for Cell Broadband Engine SPU processors.
+ This package contains headers and other files required to link with library.
 
-Package: binutils-doc
-Architecture: all
-Priority: optional
-Conflicts: binutils (<< 2.9.1.0.25-3)
-Suggests: binutils (= ${binary:Version})
-Description: Documentation for the GNU assembler, linker and binary utilities
- This package consists of the documentation for the GNU assembler,
- linker and binary utilities.
+Package: libiberty-dev
+Section: libdevel
+Architecture: any
+Depends:
+Description: The GNU common subroutines library -- development files
+ libiberty is a a collection of subroutines used by various GNU programs.
+ .
+ This package contains static libraries required to link with library.
 
-Package: binutils-source
-Architecture: all
-Priority: optional
-Description: The GNU assembler, linker and binary utilities (source)
- This package contains the sources and patches which are needed to
- build binutils.

@@ -1,0 +1,312 @@
+#!/bin/sh -e
+## 150_gold_copyrelocs.dpatch
+##
+## DP: Description: Add -z copyrelocs option for gold
+## DP: Author: Doug Kwan
+## DP: Upstream status: Taken from the trunk
+
+if [ $# -ne 1 ]; then
+    echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+    exit 1
+fi
+
+[ -f debian/patches/00patch-opts ] && . debian/patches/00patch-opts
+patch_opts="${patch_opts:--f --no-backup-if-mismatch}"
+
+case "$1" in
+       -patch) patch $patch_opts -p1 < $0;;
+       -unpatch) patch $patch_opts -p1 -R < $0;;
+        *)
+                echo >&2 "`basename $0`: script expects -patch|-unpatch as argument"
+                exit 1;;
+esac
+
+exit 0
+
+2009-09-30  Doug Kwan  <dougkwan@google.com>
+
+        * arm.cc (Target_arm::may_need_copy_reloc): Check for THUMB function
+        symbol and call Symbol::may_need_copy_reloc to determine if
+        a copy reloc is needed.
+        * copy-relocs.cc (Copy_relocs::need_copy_reloc): Return false if -z
+        nocopyreloc is given in command line.
+        (Copy_relocs::emit_copy_reloc): Assert that -z nocopyreloc is not
+        given in command line.
+        * i386.cc (Target_i386::may_need_copy_reloc): Remove.
+        (Target_i386::Scan::global): Use Symbol::may_need_copy_reloc instead
+        of the removed Target_i386::may_need_copy_reloc.
+        * options.h (copyreloc): New option with default value false.
+        * powerpc.cc (Target_powerpc::may_need_copy_reloc): Remove.
+        (Target_powerpc::Scan::global): Use Symbol::may_need_copy_reloc
+        instead of the removed Target_powerpc::may_need_copy_reloc.
+        * sparc.cc (Target_powerpc::may_need_copy_reloc): Remove.
+        (Target_sparc::Scan::global): Use Symbol::may_need_copy_reloc
+        instead of the removed Target_sparc::may_need_copy_reloc.
+        * symtab.h (Symbol::may_need_copy_reloc): New method definition.
+        * x86_64.cc (Target_powerpc::may_need_copy_reloc): Remove.
+        (Target_x86_64::Scan::global): Use Symbol::may_need_copy_reloc
+        instead of the removed Target_x86_64::may_need_copy_reloc.
+
+@DPATCH@
+Index: gold/arm.cc
+===================================================================
+RCS file: /cvs/src/src/gold/arm.cc,v
+retrieving revision 1.9
+diff -u -p -r1.9 arm.cc
+--- ./gold/arm.cc	18 Sep 2009 00:45:53 -0000	1.9
++++ ./gold/arm.cc	1 Oct 2009 00:15:37 -0000
+@@ -405,10 +405,8 @@ class Target_arm : public Sized_target<3
+   bool
+   may_need_copy_reloc(Symbol* gsym)
+   {
+-    return (!parameters->options().shared()
+-	    && gsym->is_from_dynobj()
+-	    && gsym->type() != elfcpp::STT_FUNC
+-	    && gsym->type() != elfcpp::STT_ARM_TFUNC);
++    return (gsym->type() != elfcpp::STT_ARM_TFUNC
++	    && gsym->may_need_copy_reloc());
+   }
+ 
+   // Add a potential copy relocation.
+Index: gold/copy-relocs.cc
+===================================================================
+RCS file: /cvs/src/src/gold/copy-relocs.cc,v
+retrieving revision 1.4
+diff -u -p -r1.4 copy-relocs.cc
+--- ./gold/copy-relocs.cc	10 Jul 2008 23:01:19 -0000	1.4
++++ ./gold/copy-relocs.cc	1 Oct 2009 00:15:37 -0000
+@@ -84,7 +84,8 @@ Copy_relocs<sh_type, size, big_endian>::
+     Sized_relobj<size, big_endian>* object,
+     unsigned int shndx) const
+ {
+-  // FIXME: Handle -z nocopyrelocs.
++  if (!parameters->options().copyreloc())
++    return false;
+ 
+   if (sym->symsize() == 0)
+     return false;
+@@ -109,6 +110,9 @@ Copy_relocs<sh_type, size, big_endian>::
+     Sized_symbol<size>* sym,
+     Output_data_reloc<sh_type, true, size, big_endian>* reloc_section)
+ {
++  // We should not be here if -z nocopyreloc is given.
++  gold_assert(parameters->options().copyreloc());
++
+   typename elfcpp::Elf_types<size>::Elf_WXword symsize = sym->symsize();
+ 
+   // There is no defined way to determine the required alignment of
+Index: gold/i386.cc
+===================================================================
+RCS file: /cvs/src/src/gold/i386.cc,v
+retrieving revision 1.88
+diff -u -p -r1.88 i386.cc
+--- ./gold/i386.cc	22 Jun 2009 06:51:53 -0000	1.88
++++ ./gold/i386.cc	1 Oct 2009 00:15:38 -0000
+@@ -375,17 +375,6 @@ class Target_i386 : public Target_freebs
+   Reloc_section*
+   rel_dyn_section(Layout*);
+ 
+-  // Return true if the symbol may need a COPY relocation.
+-  // References from an executable object to non-function symbols
+-  // defined in a dynamic object may need a COPY relocation.
+-  bool
+-  may_need_copy_reloc(Symbol* gsym)
+-  {
+-    return (!parameters->options().shared()
+-            && gsym->is_from_dynobj()
+-            && gsym->type() != elfcpp::STT_FUNC);
+-  }
+-
+   // Add a potential copy relocation.
+   void
+   copy_reloc(Symbol_table* symtab, Layout* layout,
+@@ -1213,7 +1202,7 @@ Target_i386::Scan::global(const General_
+         // Make a dynamic relocation if necessary.
+         if (gsym->needs_dynamic_reloc(Symbol::ABSOLUTE_REF))
+           {
+-            if (target->may_need_copy_reloc(gsym))
++            if (gsym->may_need_copy_reloc())
+               {
+ 	        target->copy_reloc(symtab, layout, object,
+ 	                           data_shndx, output_section, gsym, reloc);
+@@ -1259,7 +1248,7 @@ Target_i386::Scan::global(const General_
+           flags |= Symbol::FUNCTION_CALL;
+         if (gsym->needs_dynamic_reloc(flags))
+           {
+-            if (target->may_need_copy_reloc(gsym))
++            if (gsym->may_need_copy_reloc())
+               {
+ 	        target->copy_reloc(symtab, layout, object,
+ 	                           data_shndx, output_section, gsym, reloc);
+Index: gold/options.h
+===================================================================
+RCS file: /cvs/src/src/gold/options.h,v
+retrieving revision 1.107
+diff -u -p -r1.107 options.h
+--- ./gold/options.h	18 Sep 2009 20:02:21 -0000	1.107
++++ ./gold/options.h	1 Oct 2009 00:15:38 -0000
+@@ -928,6 +928,9 @@ class General_options
+ 	      NULL);
+   DEFINE_uint64(max_page_size, options::DASH_Z, '\0', 0,
+                 N_("Set maximum page size to SIZE"), N_("SIZE"));
++  DEFINE_bool(copyreloc, options::DASH_Z, '\0', true,
++	      NULL,
++	      N_("Do not create copy relocs"));
+   DEFINE_bool(nodefaultlib, options::DASH_Z, '\0', false,
+ 	      N_("Mark object not to use default search paths"),
+ 	      NULL);
+Index: gold/powerpc.cc
+===================================================================
+RCS file: /cvs/src/src/gold/powerpc.cc,v
+retrieving revision 1.13
+diff -u -p -r1.13 powerpc.cc
+--- ./gold/powerpc.cc	22 Jun 2009 06:51:53 -0000	1.13
++++ ./gold/powerpc.cc	1 Oct 2009 00:15:38 -0000
+@@ -284,17 +284,6 @@ class Target_powerpc : public Sized_targ
+   Reloc_section*
+   rela_dyn_section(Layout*);
+ 
+-  // Return true if the symbol may need a COPY relocation.
+-  // References from an executable object to non-function symbols
+-  // defined in a dynamic object may need a COPY relocation.
+-  bool
+-  may_need_copy_reloc(Symbol* gsym)
+-  {
+-    return (!parameters->options().shared()
+-            && gsym->is_from_dynobj()
+-            && gsym->type() != elfcpp::STT_FUNC);
+-  }
+-
+   // Copy a relocation against a global symbol.
+   void
+   copy_reloc(Symbol_table* symtab, Layout* layout,
+@@ -1311,7 +1300,7 @@ Target_powerpc<size, big_endian>::Scan::
+         // Make a dynamic relocation if necessary.
+         if (gsym->needs_dynamic_reloc(Symbol::ABSOLUTE_REF))
+           {
+-            if (target->may_need_copy_reloc(gsym))
++            if (gsym->may_need_copy_reloc())
+               {
+ 	        target->copy_reloc(symtab, layout, object,
+ 	                           data_shndx, output_section, gsym, reloc);
+@@ -1364,7 +1353,7 @@ Target_powerpc<size, big_endian>::Scan::
+ 	  flags |= Symbol::FUNCTION_CALL;
+ 	if (gsym->needs_dynamic_reloc(flags))
+ 	  {
+-	    if (target->may_need_copy_reloc(gsym))
++	    if (gsym->may_need_copy_reloc())
+ 	      {
+ 		target->copy_reloc(symtab, layout, object,
+ 				   data_shndx, output_section, gsym,
+Index: gold/sparc.cc
+===================================================================
+RCS file: /cvs/src/src/gold/sparc.cc,v
+retrieving revision 1.17
+diff -u -p -r1.17 sparc.cc
+--- ./gold/sparc.cc	22 Jun 2009 06:51:53 -0000	1.17
++++ ./gold/sparc.cc	1 Oct 2009 00:15:38 -0000
+@@ -305,17 +305,6 @@ class Target_sparc : public Sized_target
+   Reloc_section*
+   rela_dyn_section(Layout*);
+ 
+-  // Return true if the symbol may need a COPY relocation.
+-  // References from an executable object to non-function symbols
+-  // defined in a dynamic object may need a COPY relocation.
+-  bool
+-  may_need_copy_reloc(Symbol* gsym)
+-  {
+-    return (!parameters->options().shared()
+-            && gsym->is_from_dynobj()
+-            && gsym->type() != elfcpp::STT_FUNC);
+-  }
+-
+   // Copy a relocation against a global symbol.
+   void
+   copy_reloc(Symbol_table* symtab, Layout* layout,
+@@ -1984,7 +1973,7 @@ Target_sparc<size, big_endian>::Scan::gl
+ 	  flags |= Symbol::FUNCTION_CALL;
+ 	if (gsym->needs_dynamic_reloc(flags))
+ 	  {
+-	    if (target->may_need_copy_reloc(gsym))
++	    if (gsym->may_need_copy_reloc())
+ 	      {
+ 		target->copy_reloc(symtab, layout, object,
+ 				   data_shndx, output_section, gsym,
+@@ -2040,7 +2029,7 @@ Target_sparc<size, big_endian>::Scan::gl
+         // Make a dynamic relocation if necessary.
+         if (gsym->needs_dynamic_reloc(Symbol::ABSOLUTE_REF))
+           {
+-            if (target->may_need_copy_reloc(gsym))
++            if (gsym->may_need_copy_reloc())
+               {
+ 	        target->copy_reloc(symtab, layout, object,
+ 	                           data_shndx, output_section, gsym, reloc);
+Index: gold/symtab.h
+===================================================================
+RCS file: /cvs/src/src/gold/symtab.h,v
+retrieving revision 1.90
+diff -u -p -r1.90 symtab.h
+--- ./gold/symtab.h	5 Aug 2009 20:51:56 -0000	1.90
++++ ./gold/symtab.h	1 Oct 2009 00:15:38 -0000
+@@ -726,6 +726,18 @@ class Symbol
+   set_is_forced_local()
+   { this->is_forced_local_ = true; }
+ 
++  // Return true if this may need a COPY relocation.
++  // References from an executable object to non-function symbols
++  // defined in a dynamic object may need a COPY relocation.
++  bool
++  may_need_copy_reloc() const
++  {
++    return (!parameters->options().shared()
++	    && parameters->options().copyreloc()
++	    && this->is_from_dynobj()
++	    && this->type() != elfcpp::STT_FUNC);
++  }
++
+  protected:
+   // Instances of this class should always be created at a specific
+   // size.
+Index: gold/x86_64.cc
+===================================================================
+RCS file: /cvs/src/src/gold/x86_64.cc,v
+retrieving revision 1.85
+diff -u -p -r1.85 x86_64.cc
+--- ./gold/x86_64.cc	7 Aug 2009 18:29:53 -0000	1.85
++++ ./gold/x86_64.cc	1 Oct 2009 00:15:38 -0000
+@@ -375,17 +375,6 @@ class Target_x86_64 : public Target_free
+   Reloc_section*
+   rela_dyn_section(Layout*);
+ 
+-  // Return true if the symbol may need a COPY relocation.
+-  // References from an executable object to non-function symbols
+-  // defined in a dynamic object may need a COPY relocation.
+-  bool
+-  may_need_copy_reloc(Symbol* gsym)
+-  {
+-    return (!parameters->options().shared()
+-            && gsym->is_from_dynobj()
+-            && gsym->type() != elfcpp::STT_FUNC);
+-  }
+-
+   // Add a potential copy relocation.
+   void
+   copy_reloc(Symbol_table* symtab, Layout* layout,
+@@ -1323,7 +1312,7 @@ Target_x86_64::Scan::global(const Genera
+         // Make a dynamic relocation if necessary.
+         if (gsym->needs_dynamic_reloc(Symbol::ABSOLUTE_REF))
+           {
+-            if (target->may_need_copy_reloc(gsym))
++            if (gsym->may_need_copy_reloc())
+               {
+                 target->copy_reloc(symtab, layout, object,
+                                    data_shndx, output_section, gsym, reloc);
+@@ -1363,7 +1352,7 @@ Target_x86_64::Scan::global(const Genera
+           flags |= Symbol::FUNCTION_CALL;
+         if (gsym->needs_dynamic_reloc(flags))
+           {
+-            if (target->may_need_copy_reloc(gsym))
++            if (gsym->may_need_copy_reloc())
+               {
+                 target->copy_reloc(symtab, layout, object,
+                                    data_shndx, output_section, gsym, reloc);

@@ -9,30 +9,20 @@
 # paternity under the Copyright, Designs and Patents Act 1988.)
 # This file may have to be extensively modified
 
-################################################################################
-
 include /usr/share/dpatch/dpatch.make
-
-################################################################################
 
 pwd   := $(shell pwd)
 
-install_dir    = install -d -m 755
-install_file   = install -m 644
-
 SHELL  = /bin/bash
 
-CC     = gcc
 CFLAGS = -g -O2
-STRIP  = strip --remove-section=.comment --remove-section=.note
 
 ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
   CFLAGS = -g -O0
 endif
 
-VERSION       = $(shell sed -n 's/^ *VERSION=\(.*\)/\1/p' bfd/configure | head -1)
+VERSION = $(shell sed -n 's/^ *VERSION=\(.*\)/\1/p' bfd/configure | head -1)
 
-DISTRIBUTION := $(shell lsb_release -is)
 NJOBS =
 # Support parallel=<n> in DEB_BUILD_OPTIONS (see #209008)
 COMMA = ,
@@ -40,98 +30,63 @@ ifneq (,$(filter parallel=%,$(subst $(COMMA), ,$(DEB_BUILD_OPTIONS))))
   NJOBS := -j $(subst parallel=,,$(filter parallel=%,$(subst $(COMMA), ,$(DEB_BUILD_OPTIONS))))
 endif
 
-with_strip := yes
-ifneq (,$(findstring nostrip,$(DEB_BUILD_OPTIONS)))
-	with_strip := disabled through DEB_BUILD_OPTIONS
-endif
+CONFIGURE_ARGS = --enable-shared \
+	--disable-nls \
+	--prefix=/usr \
+	--host=$(DEB_HOST_GNU_TYPE) \
+	--build=$(DEB_BUILD_GNU_TYPE) \
+	--target=$(DEB_HOST_GNU_TYPE)
 
-# Support TARGET both as Debian architecture specification (e.g. arm),
-# and as the target name (e.g. arm-linux-gnu).
-try_convert := $(shell env -i dpkg-architecture -a$(TARGET) -qDEB_HOST_GNU_TYPE 2>/dev/null)
-ifneq ($(try_convert),)
-override TARGET := $(try_convert)
-endif
+BUILD_DIR=builddir-$(DEB_HOST_GNU_TYPE)
 
-p_cross = $(subst _,-,binutils-$(TARGET))
-d_cross = debian/$(p_cross)
-
-configure-stamp: patch-stamp
-	$(checkdir)
-	test "" != "$(TARGET)"
-	rm -rf configure-$(TARGET)-stamp builddir-$(TARGET)
-	mkdir builddir-$(TARGET)
-	cd builddir-$(TARGET) \
-	    && env CC="$(CC)" ../configure \
-			--host=$(DEB_BUILD_GNU_TYPE) \
-	        --build=$(DEB_BUILD_GNU_TYPE) \
-			--target=$(TARGET) --prefix=/usr \
-		$(ADDITIONAL_TARGETS)
-	touch $@
-
-build: build-stamp
-build-stamp: configure-stamp
-	$(checkdir)
-	test "" != "$(TARGET)"
-	$(MAKE) -C builddir-$(TARGET) $(NJOBS) CFLAGS="$(CFLAGS)"
-	touch $@
-
-install-stamp: build-stamp
-	$(checkdir)
-	test "" != "$(TARGET)"
-	rm -rf $(d_cross)
-	$(MAKE) -C builddir-$(TARGET) prefix=$(pwd)/$(d_cross)/usr \
-		mandir=$(pwd)/$(d_cross)/usr/share/man install
-	rm -rf $(d_cross)/usr/lib* $(d_cross)/usr/info $(d_cross)/usr/share/locale
-ifeq ($(with_strip),yes)
-	$(STRIP) $$(file $(d_cross)/usr/bin/* | awk -F: '$$0 !~ /script/ {print $$1}')
-endif
-	gzip -9 $(d_cross)/usr/share/man/man1/*
-	touch $@
-
-binary-arch: checkroot install-stamp
-	$(checkdir)
-	test "" != "$(TARGET)"
-
-	sed "/^$$/ q" < debian/control > debian/control.$(TARGET)
-	sed -e "s/__TARGET__/$$(echo -n $(TARGET) | sed s/_/-/g)/" \
-                 < debian/control.cross.in >> debian/control.$(TARGET)
-
-	$(install_dir) $(d_cross)/DEBIAN
-
-	$(install_dir) $(d_cross)/usr/share/doc/$(p_cross)/
-	$(install_file)	debian/changelog $(d_cross)/usr/share/doc/$(p_cross)/changelog.Debian
-	$(install_file)	debian/copyright debian/README.cross $(d_cross)/usr/share/doc/$(p_cross)/
-	gzip -9f $(d_cross)/usr/share/doc/$(p_cross)/changelog.Debian
-
-	for pkg in bfd gas gprof ld; do \
-	  ln -sf ../binutils/$$pkg $(d_cross)/usr/share/doc/$(p_cross)/$$pkg; \
-	done
-
-	rm -f debian/substvars
-	dpkg-shlibdeps $(d_cross)/usr/bin/*
-	dpkg-gencontrol -isp -cdebian/control.$(TARGET) -P$(d_cross) -p$(p_cross)
-	dpkg --build $(d_cross) ..
-
-binary-indep:
 
 clean: unpatch
-	$(checkdir)
-	test "" != "$(TARGET)"
-	rm -rf $(d_cross) debian/control.$(TARGET) debian/files debian/substvars \
-		builddir-$(TARGET) {configure,build,install}-$(TARGET)-stamp
+	dh_testdir
+	dh_testroot
 
-################################################################################
+	rm -rf build-* debian/control.*
 
-define checkdir
-        test -f bfd/elf32.c -a -f debian/rules
-endef
+	dh_clean
 
-# Below here is fairly generic really
+configure: patch configure-stamp
+configure-stamp:
+	dh_testdir
 
-binary:         binary-indep binary-arch
+	mkdir -p $(BUILD_DIR)
+	cd $(BUILD_DIR) && ../configure $(CONFIGURE_ARGS)
 
-checkroot:
-	$(checkdir)
-        test root = "`whoami`"
+	touch $@
 
-.PHONY: binary binary-arch binary-indep clean checkroot
+build: configure build-stamp
+build-stamp:
+	dh_testdir
+
+	$(MAKE) -C $(BUILD_DIR) $(NJOBS) CFLAGS="$(CFLAGS)"
+
+	touch $@
+
+install: build
+	dh_testdir
+	dh_testroot
+
+	$(MAKE) -C $(BUILD_DIR) prefix=$(CURDIR)/debian/tmp/usr install
+	cp $(BUILD_DIR)/libiberty/pic/libiberty.a $(CURDIR)/debian/tmp/usr/lib/libiberty_pic.a
+
+binary-arch: install
+	dh_testdir -s
+	dh_testroot -s
+
+	dh_install -s
+	dh_strip -s
+	dh_compress -s
+	dh_fixperms -s
+	dh_makeshlibs -s
+	dh_shlibdeps -s
+	dh_installdeb -s
+	dh_gencontrol -s
+	dh_builddeb -s
+
+binary-indep: install
+
+binary: binary-indep binary-arch
+.PHONY: binary binary-arch binary-indep clean
