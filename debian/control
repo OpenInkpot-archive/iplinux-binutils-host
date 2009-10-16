@@ -1,5 +1,5 @@
-Source: binutils
-Section: core
+Source: binutils-host
+Section: host/tools
 Priority: optional
 Maintainer: Mikhail Gusarov <dottedmag@dottedmag.net>
 Build-Depends: debhelper (>= 7), bash, bison, flex, dpatch, texinfo
@@ -7,54 +7,10 @@ XCS-Cross-Host-Build-Depends: debhelper (>= 7), bash, bison, flex, dpatch, texin
 XCS-Cross-Build-Depends: 
 Standards-Version: 3.8.3
 
-Package: binutils
+Package: binutils-__TARGET__
 Architecture: any
 Depends: ${shlibs:Depends}
-Description: The GNU assembler, linker and binary utilities
- The programs in this package are used to assemble, link and manipulate
- binary and object files.  They may be used in conjunction with a compiler
- and various libraries to build programs.
-
-Package: libbfd0
-Architecture: any
-Depends: ${shlibs:Depends}
-Description: The GNU object file library
- BFD is an object file library.  It permits applications to use the same
- routines to process object files regardless of their format.
-
-Package: libbfd-dev
-Section: libdevel
-Architecture: any
-Depends: libbfd0 (= ${binary:Version})
-Description: The GNU object file library -- development files
- BFD is an object file library.  It permits applications to use the same
- routines to process object files regardless of their format.
- .
- This package contains headers and other files required to link with library.
-
-Package: libopcodes0
-Architecture: any
-Depends: ${shlibs:Depends}
-Description: The GNU assembler opcodes library
- libopcodes is a library providing support for disassembling of object files for
- different architectures.
-
-Package: libopcodes-dev
-Section: libdevel
-Architecture: any
-Depends: libopcodes0 (= ${binary:Version})
-Description: The GNU assembler opcodes library -- development files
- libopcodes is a library providing support for disassembling of object files for
- different architectures.
- .
- This package contains headers and other files required to link with library.
-
-Package: libiberty-dev
-Section: libdevel
-Architecture: any
-Depends:
-Description: The GNU common subroutines library -- development files
- libiberty is a a collection of subroutines used by various GNU programs.
- .
- This package contains static libraries required to link with library.
-
+Priority: optional
+Description: The GNU binary utilities, for __TARGET__ target
+ This package provides GNU assembler, linker and binary utilities
+ for use in a cross-compilation environment.

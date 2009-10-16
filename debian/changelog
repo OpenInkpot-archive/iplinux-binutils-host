@@ -1,3 +1,9 @@
+binutils-host (2.19.91.20091006-1) asimov; urgency=low
+
+  * Cross-toolchain package added.
+
+ -- Mikhail Gusarov <dottedmag@dottedmag.net>  Fri, 16 Oct 2009 02:32:29 +0700
+
 binutils (2.19.91.20091006-1) asimov; urgency=low
 
   * New upstream snapshot, taken from Debian.

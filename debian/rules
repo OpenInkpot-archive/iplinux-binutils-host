@@ -30,21 +30,27 @@ ifneq (,$(filter parallel=%,$(subst $(COMMA), ,$(DEB_BUILD_OPTIONS))))
   NJOBS := -j $(subst parallel=,,$(filter parallel=%,$(subst $(COMMA), ,$(DEB_BUILD_OPTIONS))))
 endif
 
-CONFIGURE_ARGS = --enable-shared \
-	--disable-nls \
+try_convert := $(shell env -i dpkg-architecture -a$(TARGET) -qDEB_HOST_GNU_TYPE 2>/dev/null)
+ifneq ($(try_convert),)
+ override TARGET := $(try_convert)
+endif
+
+PKG_TARGET=$(shell echo -n $(TARGET) | sed s/_/-/g)
+
+CONFIGURE_ARGS = --disable-nls \
 	--prefix=/usr \
-	--host=$(DEB_HOST_GNU_TYPE) \
-	--build=$(DEB_BUILD_GNU_TYPE) \
-	--target=$(DEB_HOST_GNU_TYPE)
+	--target=$(TARGET)
 
-BUILD_DIR=builddir-$(DEB_HOST_GNU_TYPE)
-
+BUILD_DIR=builddir-$(TARGET)
 
 clean: unpatch
 	dh_testdir
 	dh_testroot
 
-	rm -rf build-* debian/control.*
+	rm -rf build-* debian/control.cross
+
+	sed -ie "s/Package: .*/Package: binutils-__TARGET__/g" $(CURDIR)/debian/control
+	sed -ie "s/for.*target/for __TARGET__ target/g" $(CURDIR)/debian/control
 
 	dh_clean
 
@@ -54,6 +60,9 @@ configure-stamp:
 
 	mkdir -p $(BUILD_DIR)
 	cd $(BUILD_DIR) && ../configure $(CONFIGURE_ARGS)
+
+	sed -ie "s/Package: .*/Package: binutils-$(PKG_TARGET)/" $(CURDIR)/debian/control
+	sed -ie "s/for.*target/for $(PKG_TARGET) target/" $(CURDIR)/debian/control
 
 	touch $@
 
@@ -70,13 +79,16 @@ install: build
 	dh_testroot
 
 	$(MAKE) -C $(BUILD_DIR) prefix=$(CURDIR)/debian/tmp/usr install
-	cp $(BUILD_DIR)/libiberty/pic/libiberty.a $(CURDIR)/debian/tmp/usr/lib/libiberty_pic.a
 
+	mkdir -p $(CURDIR)/debian/binutils-$(TARGET)/usr
+	cp -a $(CURDIR)/debian/tmp/usr/bin $(CURDIR)/debian/binutils-$(TARGET)/usr
+	cp -a $(CURDIR)/debian/tmp/usr/$(TARGET) $(CURDIR)/debian/binutils-$(TARGET)/usr
+
+binary-arch:
 binary-arch: install
 	dh_testdir -s
 	dh_testroot -s
 
-	dh_install -s
 	dh_strip -s
 	dh_compress -s
 	dh_fixperms -s
