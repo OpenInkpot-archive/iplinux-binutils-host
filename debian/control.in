@@ -7,10 +7,11 @@ XCS-Cross-Host-Build-Depends: debhelper (>= 7), bash, bison, flex, dpatch, texin
 XCS-Cross-Build-Depends: 
 Standards-Version: 3.8.3
 
-Package: binutils-__TARGET__
+Package: binutils-__PKG_GNU_TARGET__
 Architecture: any
 Depends: ${shlibs:Depends}
+Provides: binutils-toolchain-__TARGET__-cross
 Priority: optional
-Description: The GNU binary utilities, for __TARGET__ target
+Description: The GNU binary utilities, for __PKG_GNU_TARGET__ target
  This package provides GNU assembler, linker and binary utilities
  for use in a cross-compilation environment.

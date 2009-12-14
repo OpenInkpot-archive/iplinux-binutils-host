@@ -30,27 +30,24 @@ ifneq (,$(filter parallel=%,$(subst $(COMMA), ,$(DEB_BUILD_OPTIONS))))
   NJOBS := -j $(subst parallel=,,$(filter parallel=%,$(subst $(COMMA), ,$(DEB_BUILD_OPTIONS))))
 endif
 
-try_convert := $(shell env -i dpkg-architecture -a$(TARGET) -qDEB_HOST_GNU_TYPE 2>/dev/null)
-ifneq ($(try_convert),)
- override TARGET := $(try_convert)
-endif
+# try_convert := $(shell env -i dpkg-architecture -a$(TARGET) -qDEB_HOST_GNU_TYPE 2>/dev/null)
+# ifneq ($(try_convert),)
+#  override TARGET := $(try_convert)
+# endif
 
-PKG_TARGET=$(shell echo -n $(TARGET) | sed s/_/-/g)
+# PKG_TARGET=$(shell echo -n $(TARGET) | sed s/_/-/g)
 
 CONFIGURE_ARGS = --disable-nls \
 	--prefix=/usr \
-	--target=$(TARGET)
+	--target=__GNU_TARGET__
 
-BUILD_DIR=builddir-$(TARGET)
+BUILD_DIR=builddir-__PKG_GNU_TARGET__
 
 clean: unpatch
 	dh_testdir
 	dh_testroot
 
-	rm -rf build-* debian/control.cross
-
-	sed -ie "s/Package: .*/Package: binutils-__TARGET__/g" $(CURDIR)/debian/control
-	sed -ie "s/for.*target/for __TARGET__ target/g" $(CURDIR)/debian/control
+	rm -rf build-*
 
 	dh_clean
 
@@ -60,9 +57,6 @@ configure-stamp:
 
 	mkdir -p $(BUILD_DIR)
 	cd $(BUILD_DIR) && ../configure $(CONFIGURE_ARGS)
-
-	sed -ie "s/Package: .*/Package: binutils-$(PKG_TARGET)/" $(CURDIR)/debian/control
-	sed -ie "s/for.*target/for $(PKG_TARGET) target/" $(CURDIR)/debian/control
 
 	touch $@
 
@@ -80,9 +74,9 @@ install: build
 
 	$(MAKE) -C $(BUILD_DIR) prefix=$(CURDIR)/debian/tmp/usr install
 
-	mkdir -p $(CURDIR)/debian/binutils-$(TARGET)/usr
-	cp -a $(CURDIR)/debian/tmp/usr/bin $(CURDIR)/debian/binutils-$(TARGET)/usr
-	cp -a $(CURDIR)/debian/tmp/usr/$(TARGET) $(CURDIR)/debian/binutils-$(TARGET)/usr
+	mkdir -p $(CURDIR)/debian/binutils-__PKG_GNU_TARGET__/usr
+	cp -a $(CURDIR)/debian/tmp/usr/bin $(CURDIR)/debian/binutils-__PKG_GNU_TARGET__/usr
+	cp -a $(CURDIR)/debian/tmp/usr/__GNU_TARGET__ $(CURDIR)/debian/binutils-__PKG_GNU_TARGET__/usr
 
 binary-arch:
 binary-arch: install
