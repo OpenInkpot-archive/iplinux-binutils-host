@@ -1,15 +1,10 @@
-binutils-host (2.19.91.20091006-2) zelazny; urgency=low
+binutils-host (2.19.91.20091006-1) zelazny; urgency=low
 
+  * Cross-toolchain package added.
   * Added debian/source/prepare for new toolchain builder.
   * Added debian/web-git-section for cgit
 
- -- Mikhail Gusarov <dottedmag@dottedmag.net>  Sat, 19 Dec 2009 00:00:28 +0600
-
-binutils-host (2.19.91.20091006-1) asimov; urgency=low
-
-  * Cross-toolchain package added.
-
- -- Mikhail Gusarov <dottedmag@dottedmag.net>  Fri, 16 Oct 2009 02:32:29 +0700
+ -- Mikhail Gusarov <dottedmag@dottedmag.net>  Sun, 20 Dec 2009 19:30:02 +0600
 
 binutils (2.19.91.20091006-1) asimov; urgency=low
 
