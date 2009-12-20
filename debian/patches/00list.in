@@ -8,3 +8,5 @@
 130_gold_disable_testsuite_build
 
 150_gold_copyrelocs
+
+__GNU_HASH_PATCH__

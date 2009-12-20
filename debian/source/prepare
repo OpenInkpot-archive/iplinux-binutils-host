@@ -9,14 +9,20 @@ TARGET=$1
 GNU_TARGET=$(dpkg-architecture -a${TARGET} -qDEB_HOST_GNU_TYPE 2>/dev/null)
 PKG_GNU_TARGET=$(echo ${GNU_TARGET} | sed -e 's/_/-/g')
 
+if [ $TARGET != mipsel ]; then
+    GNU_HASH_PATCH=200_emit_gnu_hash
+fi
+
 sed -e "s/__PKG_GNU_TARGET__/${PKG_GNU_TARGET}/g" \
     -e "s/__TARGET__/${TARGET}/g" < debian/control.in > debian/control
 sed -e "s/__PKG_GNU_TARGET__/${PKG_GNU_TARGET}/g" \
     -e "s/__GNU_TARGET__/${GNU_TARGET}/g" < debian/rules.in > debian/rules
+sed -e "s/__GNU_HASH_PATCH__/${GNU_HASH_PATCH}/g" \
+    < debian/patches/00list.in > debian/patches/00list
 
 sleep 1
 
 DIR=$(basename $(pwd))
 (cd ..; dpkg-source -b "$DIR")
 
-rm -f debian/control debian/rules
+rm -f debian/control debian/rules debian/patches/00list
