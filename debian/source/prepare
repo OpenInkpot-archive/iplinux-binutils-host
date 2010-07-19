@@ -17,7 +17,7 @@ sed -e "s/__PKG_GNU_TARGET__/${PKG_GNU_TARGET}/g" \
     -e "s/__GNU_TARGET__/${GNU_TARGET}/g" < debian/rules.in > debian/rules
 cp debian/patches/00list.in debian/patches/00list
 
-if [ $TARGET != mipsel ]; then
+if [ $TARGET != mipsel -a $TARGET != ucmipsel ]; then
     echo 200_emit_gnu_hash >> debian/patches/00list
 fi
 
