@@ -1,3 +1,10 @@
+binutils-host (2.19.91.20091006-2) zelazny; urgency=low
+
+  [ Alexey Zaitsev ]
+  * Update debian/source/prepare to work with new mktpkg
+
+ -- Mikhail Gusarov <dottedmag@dottedmag.net>  Wed, 04 Aug 2010 04:41:57 +0700
+
 binutils-host (2.19.91.20091006-1) zelazny; urgency=low
 
   * Cross-toolchain package added.
